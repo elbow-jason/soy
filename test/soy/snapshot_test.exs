@@ -6,7 +6,7 @@ defmodule Soy.SnapshotTest do
   describe "new/1" do
     test "returns a reference" do
       db = Soy.open(tmp_dir())
-      ss = Snapshot.new(db)
+      assert {Snapshot, ss} = Snapshot.new(db)
       assert is_reference(ss) == true
     end
   end
@@ -82,8 +82,8 @@ defmodule Soy.SnapshotTest do
       :ok = Soy.put(db, "k3", "v3")
       ss = Snapshot.new(db)
       :ok = Soy.put(db, "k2", "v2")
-      ss_it = Snapshot.iter(ss, :first)
-      db_it = Iter.forward(db)
+      ss_it = Iter.new(ss)
+      db_it = Iter.new(db)
 
       assert Iter.next(db_it) == {"k1", "v1"}
       assert Iter.next(db_it) == {"k2", "v2"}

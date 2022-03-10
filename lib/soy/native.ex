@@ -28,10 +28,15 @@ defmodule Soy.Native do
   def multi_get(_db, _keys), do: err()
 
   # iteration for both db and cf based on itermode
-  def iter(_db, _iter_mode), do: err()
-  def iter_next(_db_iter), do: err()
+  def db_iter(_db), do: err()
+  def ss_iter(_ss), do: err()
+
+  def iter_seek(_db_iter, _seek), do: err()
+
   def iter_valid(_db_iter), do: err()
-  def iter_set_mode(_db_iter, _iter_mode), do: err()
+  def iter_key(_it), do: err()
+  def iter_value(_it), do: err()
+  def iter_key_value(_it), do: err()
 
   # cf create/drop
   def create_cf(_db, _cf_name, _open_cfg), do: err()
@@ -47,7 +52,7 @@ defmodule Soy.Native do
   def snapshot(_db), do: err()
   def ss_fetch(_ss, _key), do: err()
   def ss_fetch_cf(_ss, _cf_name, _key), do: err()
-  def ss_iter(_ss, _mode), do: err()
+
   def ss_multi_get(_db, _keys), do: err()
   def ss_multi_get_cf(_ss, _cf_and_key_pairs), do: err()
 

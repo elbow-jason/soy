@@ -1,14 +1,13 @@
 use rocksdb::checkpoint::Checkpoint;
-use rocksdb::{
-    DBIterator, Direction, IteratorMode, Options, Snapshot as RSnapshot, WriteBatch, DB as RDB,
+use rocksdb::{Options, Snapshot as RSnapshot, WriteBatch, DB as RDB};
+use rustler::{
+    Atom, Binary, Env, Error, NifRecord, NifResult, NifUnitEnum, NifUntaggedEnum, ResourceArc, Term,
 };
-
-use rustler::{Atom, Binary, Env, Error, NifResult, ResourceArc, Term};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 mod iteration;
-use iteration::IterMode;
+use iteration::{IterLocker, IterResource, SafeIter};
 
 mod bin;
 use bin::{new_binary, Bin};
@@ -37,173 +36,18 @@ macro_rules! ok_or_err {
     };
 }
 
-struct DBResource {
+pub struct DBResource {
     rdb: RDB,
 }
 
 impl DBResource {
-    fn new(rdb: RDB) -> DB {
+    fn new(rdb: RDB) -> SoyDB {
         ResourceArc::new(DBResource { rdb })
     }
 }
-type DB = ResourceArc<DBResource>;
+type SoyDB = ResourceArc<DBResource>;
 
-unsafe fn extend_lifetime_db_iter<'b>(r: DBIterator<'b>) -> DBIterator<'static> {
-    std::mem::transmute::<DBIterator<'b>, DBIterator<'static>>(r)
-}
-
-// unsafe fn unextend_lifetime_mut<'b>(r: &mut DBIterator<'static>) -> &'b mut DBIterator<'b> {
-//     std::mem::transmute::<&mut DBIterator<'static>, &mut DBIterator<'b>>(r)
-// }
-
-struct DbIter {
-    _db: DB,
-    it: RwLock<DBIterator<'static>>,
-}
-
-impl DbIter {
-    fn new<'a>(db: DB, iter_mode: IterMode) -> DbIter {
-        let rdb = &db.rdb;
-        let short_iter = match iter_mode {
-            IterMode::First(_) => rdb.iterator(IteratorMode::Start),
-            IterMode::Last(_) => rdb.iterator(IteratorMode::End),
-            IterMode::Forward(ref fwd) => {
-                let mode = IteratorMode::From(fwd.as_bytes(), Direction::Forward);
-                rdb.iterator(mode)
-            }
-            IterMode::Reverse(ref rev) => {
-                let mode = IteratorMode::From(rev.as_bytes(), Direction::Reverse);
-                rdb.iterator(mode)
-            }
-            IterMode::Prefix(ref prefix) => rdb.prefix_iterator(prefix.as_bytes()),
-            // CF variants
-            IterMode::FirstCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                rdb.iterator_cf(&cf_handler, IteratorMode::Start)
-            }
-            IterMode::LastCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                rdb.iterator_cf(&cf_handler, IteratorMode::Start)
-            }
-            IterMode::ForwardCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                let mode = IteratorMode::From(cf.as_bytes(), Direction::Forward);
-                rdb.iterator_cf(&cf_handler, mode)
-            }
-            IterMode::ReverseCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                let mode = IteratorMode::From(cf.as_bytes(), Direction::Reverse);
-                rdb.iterator_cf(&cf_handler, mode)
-            }
-            IterMode::PrefixCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                rdb.prefix_iterator_cf(&cf_handler, cf.as_bytes())
-            }
-        };
-        let it = unsafe { extend_lifetime_db_iter(short_iter) };
-        DbIter {
-            _db: db,
-            it: RwLock::new(it),
-        }
-    }
-}
-
-struct SsIter {
-    _ss: SS,
-    it: RwLock<DBIterator<'static>>,
-}
-
-impl SsIter {
-    fn new<'a>(ss: SS, iter_mode: IterMode) -> SsIter {
-        let rss = &ss.rss;
-        let rdb = &ss._db.rdb;
-        let short_iter = match iter_mode {
-            IterMode::First(_) => rss.iterator(IteratorMode::Start),
-            IterMode::Last(_) => rss.iterator(IteratorMode::End),
-            IterMode::Forward(ref fwd) => {
-                let mode = IteratorMode::From(fwd.as_bytes(), Direction::Forward);
-                rss.iterator(mode)
-            }
-            IterMode::Reverse(ref rev) => {
-                let mode = IteratorMode::From(rev.as_bytes(), Direction::Reverse);
-                rss.iterator(mode)
-            }
-            // IterMode::Prefix(ref prefix) => rdb.prefix_iterator(prefix.as_bytes()),
-            // CF variants
-            IterMode::FirstCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                rss.iterator_cf(&cf_handler, IteratorMode::Start)
-            }
-            IterMode::LastCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                rss.iterator_cf(&cf_handler, IteratorMode::Start)
-            }
-            IterMode::ForwardCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                let mode = IteratorMode::From(cf.as_bytes(), Direction::Forward);
-                rss.iterator_cf(&cf_handler, mode)
-            }
-            IterMode::ReverseCf(cf) => {
-                let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-                let mode = IteratorMode::From(cf.as_bytes(), Direction::Reverse);
-                rss.iterator_cf(&cf_handler, mode)
-            }
-            _ => {
-                panic!("prefix iteration is not supported for snapshots");
-            } // IterMode::PrefixCf(cf) => {
-              //     let cf_handler = rdb.cf_handle(cf.name()).unwrap();
-              //     rss.prefix_iterator_cf(&cf_handler, cf.as_bytes())
-              // }
-        };
-        let it = unsafe { extend_lifetime_db_iter(short_iter) };
-        SsIter {
-            _ss: ss,
-            it: RwLock::new(it),
-        }
-    }
-}
-
-enum IterResource {
-    Db(DbIter),
-    Ss(SsIter),
-}
-
-impl IterResource {
-    fn from_ss(ssi: SsIter) -> KVIter {
-        ResourceArc::new(IterResource::Ss(ssi))
-    }
-
-    fn from_db(dbi: DbIter) -> KVIter {
-        ResourceArc::new(IterResource::Db(dbi))
-    }
-}
-
-type KVIter = ResourceArc<IterResource>;
-
-impl IterLocker for DbIter {
-    fn lock(&self) -> &RwLock<DBIterator<'static>> {
-        &self.it
-    }
-}
-
-impl IterLocker for SsIter {
-    fn lock(&self) -> &RwLock<DBIterator<'static>> {
-        &self.it
-    }
-}
-
-impl IterLocker for IterResource {
-    fn lock(&self) -> &RwLock<DBIterator<'static>> {
-        match self {
-            IterResource::Db(it) => it.lock(),
-            IterResource::Ss(it) => it.lock(),
-        }
-    }
-}
-
-pub trait IterLocker {
-    fn lock(&self) -> &RwLock<DBIterator<'static>>;
-}
+type SoyIter = ResourceArc<IterResource>;
 
 mod atoms {
     rustler::atoms! {
@@ -212,9 +56,9 @@ mod atoms {
     }
 }
 
-struct SnapshotResource {
+pub struct SnapshotResource {
     rss: RSnapshot<'static>,
-    _db: DB,
+    db: SoyDB,
 }
 
 unsafe fn extend_lifetime_rss<'b>(r: RSnapshot<'b>) -> RSnapshot<'static> {
@@ -222,16 +66,16 @@ unsafe fn extend_lifetime_rss<'b>(r: RSnapshot<'b>) -> RSnapshot<'static> {
 }
 
 impl SnapshotResource {
-    fn new(db: DB) -> SS {
+    fn new(db: SoyDB) -> SS {
         let rss = unsafe { extend_lifetime_rss(db.rdb.snapshot()) };
-        ResourceArc::new(SnapshotResource { rss, _db: db })
+        ResourceArc::new(SnapshotResource { rss, db })
     }
 }
 
 type SS = ResourceArc<SnapshotResource>;
 
 #[rustler::nif]
-fn open(path: String, open_opts: SoyOpenOpts) -> DB {
+fn open(path: String, open_opts: SoyOpenOpts) -> SoyDB {
     let opts = open_opts.into();
     match RDB::list_cf(&opts, &path[..]) {
         Ok(cfs) => {
@@ -246,12 +90,12 @@ fn open(path: String, open_opts: SoyOpenOpts) -> DB {
 }
 
 #[rustler::nif(name = "path")]
-fn db_path(db: DB) -> String {
+fn db_path(db: SoyDB) -> String {
     db.rdb.path().to_str().unwrap().to_string()
 }
 
 #[rustler::nif]
-fn checkpoint(db: DB, checkpoint_path: String) -> Atom {
+fn checkpoint(db: SoyDB, checkpoint_path: String) -> Atom {
     let cp_path = PathBuf::from(checkpoint_path);
     if db.rdb.path() == cp_path {
         panic!(
@@ -276,12 +120,12 @@ fn repair(path: String) -> NifResult<Atom> {
 }
 
 #[rustler::nif]
-fn put(db: DB, key: Binary, val: Binary) -> NifResult<Atom> {
+fn put(db: SoyDB, key: Binary, val: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.put(&key[..], &val[..]))
 }
 
 #[rustler::nif]
-fn fetch<'a>(db: DB, key: Binary) -> NifResult<(Atom, Bin)> {
+fn fetch<'a>(db: SoyDB, key: Binary) -> NifResult<(Atom, Bin)> {
     match db.rdb.get(&key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
         Ok(None) => Err(Error::Atom("error")),
@@ -290,12 +134,12 @@ fn fetch<'a>(db: DB, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn delete(db: DB, key: Binary) -> NifResult<Atom> {
+fn delete(db: SoyDB, key: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.delete(&key[..]))
 }
 
 #[rustler::nif]
-fn multi_get<'a>(db: DB, keys: Vec<Binary>) -> Vec<Option<Bin>> {
+fn multi_get<'a>(db: SoyDB, keys: Vec<Binary>) -> Vec<Option<Bin>> {
     let keys_it = keys.iter().map(|k| (&k[..]).to_vec());
     db.rdb
         .multi_get(keys_it)
@@ -308,7 +152,7 @@ fn multi_get<'a>(db: DB, keys: Vec<Binary>) -> Vec<Option<Bin>> {
 }
 
 #[rustler::nif]
-fn multi_get_cf<'a>(db: DB, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bin>> {
+fn multi_get_cf<'a>(db: SoyDB, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bin>> {
     let rdb = &db.rdb;
     let cf_handle_keys: Vec<(Arc<rocksdb::BoundColumnFamily<'_>>, Binary)> = cf_and_keys
         .into_iter()
@@ -330,7 +174,7 @@ fn multi_get_cf<'a>(db: DB, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bi
 }
 
 #[rustler::nif]
-fn live_files(db: DB) -> Vec<SoyLiveFile> {
+fn live_files(db: SoyDB) -> Vec<SoyLiveFile> {
     db.rdb
         .live_files()
         .unwrap()
@@ -340,7 +184,7 @@ fn live_files(db: DB) -> Vec<SoyLiveFile> {
 }
 
 #[rustler::nif]
-fn batch<'a>(db: DB, ops: Vec<BatchOp>) -> NifResult<usize> {
+fn batch<'a>(db: SoyDB, ops: Vec<BatchOp>) -> NifResult<usize> {
     if ops.len() == 0 {
         return Ok(0);
     }
@@ -372,28 +216,84 @@ fn batch<'a>(db: DB, ops: Vec<BatchOp>) -> NifResult<usize> {
 }
 
 #[rustler::nif]
-fn iter<'a>(db: DB, maybe_mode: Option<IterMode>) -> KVIter {
-    let mode = maybe_mode.unwrap_or(IterMode::default());
-    let dbi = DbIter::new(db, mode);
-    IterResource::from_db(dbi)
+fn db_iter<'a>(db: SoyDB) -> SoyIter {
+    IterResource::from_db(db)
+}
+
+#[derive(Debug, NifUnitEnum)]
+enum SeekAtom {
+    First,
+    Last,
+    Next,
+    Prev,
+}
+
+#[derive(NifRecord)]
+#[tag = "next"]
+pub struct SeekNext(Bin);
+
+#[derive(NifRecord)]
+#[tag = "prev"]
+pub struct SeekPrev(Bin);
+
+#[derive(NifUntaggedEnum)]
+enum Seek {
+    Atom(SeekAtom),
+    Next(SeekNext),
+    Prev(SeekPrev),
+}
+
+#[derive(NifRecord)]
+#[tag = "next"]
+pub struct SeekNextBin(Bin);
+
+#[rustler::nif]
+fn iter_seek<'a>(env: Env<'a>, soy_iter: SoyIter, seek: Seek) -> Option<(Binary<'a>, Binary<'a>)> {
+    let mut it = soy_iter.lock().write().unwrap();
+    match seek {
+        Seek::Atom(SeekAtom::Next) => it.next(),
+        Seek::Atom(SeekAtom::Prev) => it.prev(),
+        Seek::Atom(SeekAtom::First) => it.seek_to_first(),
+        Seek::Atom(SeekAtom::Last) => it.seek_to_last(),
+        Seek::Next(SeekNext(key)) => it.seek(key.as_bytes()),
+        Seek::Prev(SeekPrev(key)) => it.seek_for_prev(key.as_bytes()),
+    }
+    do_iter_key_value(env, &it)
 }
 
 #[rustler::nif]
-fn iter_next<'a>(env: Env<'a>, kv_iter: KVIter) -> Option<(Binary<'a>, Binary<'a>)> {
-    let mut it = kv_iter.lock().write().unwrap();
-    it.next()
-        .map(|(key, value)| (new_binary(&key[..], env), new_binary(&value[..], env)))
+fn iter_key(env: Env, soy_iter: SoyIter) -> Option<Binary> {
+    soy_iter
+        .lock()
+        .read()
+        .unwrap()
+        .key()
+        .map(|k| new_binary(&k[..], env))
 }
 
 #[rustler::nif]
-fn iter_set_mode(kv_iter: KVIter, mode: IterMode) -> Atom {
-    let mut it = kv_iter.lock().write().unwrap();
-    it.set_mode((&mode).into());
-    atoms::ok()
+fn iter_value(env: Env, soy_iter: SoyIter) -> Option<Binary> {
+    soy_iter
+        .lock()
+        .read()
+        .unwrap()
+        .value()
+        .map(|k| new_binary(&k[..], env))
 }
 
 #[rustler::nif]
-fn snapshot(db: DB) -> SS {
+fn iter_key_value(env: Env, soy_iter: SoyIter) -> Option<(Binary, Binary)> {
+    let it = soy_iter.lock().read().unwrap();
+    do_iter_key_value(env, &it)
+}
+
+fn do_iter_key_value<'a>(env: Env<'a>, it: &SafeIter<'a>) -> Option<(Binary<'a>, Binary<'a>)> {
+    it.key_value()
+        .map(|(k, v)| (new_binary(&k[..], env), new_binary(&v[..], env)))
+}
+
+#[rustler::nif]
+fn snapshot(db: SoyDB) -> SS {
     SnapshotResource::new(db)
 }
 
@@ -408,7 +308,7 @@ fn ss_fetch(ss: SS, key: Binary) -> NifResult<(Atom, Bin)> {
 
 #[rustler::nif]
 fn ss_fetch_cf(ss: SS, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
-    let cf_handler = ss._db.rdb.cf_handle(&name[..]).unwrap();
+    let cf_handler = ss.db.rdb.cf_handle(&name[..]).unwrap();
     match ss.rss.get_cf(&cf_handler, &key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
         Ok(None) => Err(Error::Atom("error")),
@@ -417,13 +317,12 @@ fn ss_fetch_cf(ss: SS, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn iter_valid<'a>(kv_iter: KVIter) -> bool {
-    let it = kv_iter.lock().read().unwrap();
-    it.valid()
+fn iter_valid<'a>(soy_iter: SoyIter) -> bool {
+    soy_iter.lock().read().unwrap().valid()
 }
 
 #[rustler::nif]
-fn create_cf(db: DB, name: String, open_opts: SoyOpenOpts) -> NifResult<Atom> {
+fn create_cf(db: SoyDB, name: String, open_opts: SoyOpenOpts) -> NifResult<Atom> {
     let opts = open_opts.into();
     ok_or_err!(db.rdb.create_cf(name.as_str(), &opts))
 }
@@ -434,18 +333,18 @@ fn list_cf(path: String) -> Vec<String> {
 }
 
 #[rustler::nif]
-fn drop_cf(db: DB, name: String) -> NifResult<Atom> {
+fn drop_cf(db: SoyDB, name: String) -> NifResult<Atom> {
     ok_or_err!(db.rdb.drop_cf(name.as_str()))
 }
 
 #[rustler::nif]
-fn put_cf(db: DB, name: String, key: Binary, val: Binary) -> NifResult<Atom> {
+fn put_cf(db: SoyDB, name: String, key: Binary, val: Binary) -> NifResult<Atom> {
     let cf_handler = db.rdb.cf_handle(&name[..]).unwrap();
     ok_or_err!(db.rdb.put_cf(&cf_handler, &key[..], &val[..]))
 }
 
 #[rustler::nif]
-fn fetch_cf(db: DB, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
+fn fetch_cf(db: SoyDB, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
     let cf_handler = db.rdb.cf_handle(&name[..]).unwrap();
     match db.rdb.get_cf(&cf_handler, &key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
@@ -455,22 +354,20 @@ fn fetch_cf(db: DB, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn delete_cf(db: DB, name: String, key: Binary) -> NifResult<Atom> {
+fn delete_cf(db: SoyDB, name: String, key: Binary) -> NifResult<Atom> {
     let cf_handler = db.rdb.cf_handle(&name[..]).unwrap();
     ok_or_err!(db.rdb.delete_cf(&cf_handler, &key[..]))
 }
 
 #[rustler::nif]
-fn ss_iter<'a>(ss: SS, maybe_mode: Option<IterMode>) -> KVIter {
-    let mode = maybe_mode.unwrap_or(IterMode::default());
-    let ssi = SsIter::new(ss, mode);
-    IterResource::from_ss(ssi)
+fn ss_iter<'a>(ss: SS) -> SoyIter {
+    IterResource::from_ss(ss)
 }
 
 #[rustler::nif]
 fn ss_multi_get_cf<'a>(ss: SS, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bin>> {
     let rss = &ss.rss;
-    let rdb = &ss._db.rdb;
+    let rdb = &ss.db.rdb;
     let cf_handle_keys: Vec<(Arc<rocksdb::BoundColumnFamily<'_>>, Binary)> = cf_and_keys
         .into_iter()
         .map(|(cf_name, key)| {
@@ -531,11 +428,8 @@ rustler::init!(
         fetch,
         delete,
         batch,
-        iter,
+        db_iter,
         multi_get,
-        iter_next,
-        iter_valid,
-        iter_set_mode,
         live_files,
         list_cf,
         drop_cf,
@@ -554,7 +448,16 @@ rustler::init!(
         // write_opts
         write_opts_default,
         // read_opts_default
-        read_opts_default
+        read_opts_default,
+        // iter funcs
+        iter_key,
+        iter_value,
+        iter_key_value,
+        // iter_next,
+        // iter_prev,
+        iter_seek,
+        // iter_seek_for_prev,
+        iter_valid,
     ],
     load = load
 );
