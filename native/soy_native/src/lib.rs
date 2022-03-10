@@ -5,6 +5,7 @@ use rocksdb::{
 };
 
 use rustler::{Atom, Binary, Env, Error, NifResult, NifStruct, ResourceArc, Term};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 mod iteration;
@@ -36,12 +37,11 @@ macro_rules! ok_or_err {
 
 struct DBResource {
     rdb: RDB,
-    path: String,
 }
 
 impl DBResource {
-    fn new(rdb: RDB, path: String) -> DB {
-        ResourceArc::new(DBResource { rdb, path })
+    fn new(rdb: RDB) -> DB {
+        ResourceArc::new(DBResource { rdb })
     }
 }
 type DB = ResourceArc<DBResource>;
@@ -234,31 +234,32 @@ fn open(path: String, open_opts: SoyOpenOpts) -> DB {
     match RDB::list_cf(&opts, &path[..]) {
         Ok(cfs) => {
             let rdb = RDB::open_cf(&opts, &path[..], cfs).unwrap();
-            DBResource::new(rdb, path)
+            DBResource::new(rdb)
         }
         Err(_) => {
             let rdb = RDB::open(&opts, &path[..]).unwrap();
-            DBResource::new(rdb, path)
+            DBResource::new(rdb)
         }
     }
 }
 
 #[rustler::nif(name = "path")]
 fn db_path(db: DB) -> String {
-    db.path.clone()
+    db.rdb.path().to_str().unwrap().to_string()
 }
 
 #[rustler::nif]
 fn checkpoint(db: DB, checkpoint_path: String) -> Atom {
-    if db.path == checkpoint_path {
+    let cp_path = PathBuf::from(checkpoint_path);
+    if db.rdb.path() == cp_path {
         panic!(
             "checkpoint path cannot be the same as the db path - got: {}",
-            checkpoint_path
+            cp_path.to_str().unwrap()
         );
     }
     let rdb = &db.rdb;
     let checkpoint = Checkpoint::new(rdb).unwrap();
-    checkpoint.create_checkpoint(checkpoint_path).unwrap();
+    checkpoint.create_checkpoint(cp_path).unwrap();
     atoms::ok()
 }
 

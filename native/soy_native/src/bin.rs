@@ -7,6 +7,11 @@ impl Bin {
     pub fn from_vec(v: Vec<u8>) -> Bin {
         Bin(v)
     }
+
+    // pub fn from_str(s: &str) -> Bin {
+    //     Bin(s.as_bytes().to_vec())
+    // }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0[..]
     }
