@@ -1,10 +1,9 @@
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::{
-    DBIterator, Direction, IteratorMode, LiveFile, Options, Snapshot as RSnapshot, WriteBatch,
-    DB as RDB,
+    DBIterator, Direction, IteratorMode, Options, Snapshot as RSnapshot, WriteBatch, DB as RDB,
 };
 
-use rustler::{Atom, Binary, Env, Error, NifResult, NifStruct, ResourceArc, Term};
+use rustler::{Atom, Binary, Env, Error, NifResult, ResourceArc, Term};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -25,6 +24,9 @@ use read_opts::SoyReadOpts;
 
 mod open_opts;
 use open_opts::SoyOpenOpts;
+
+mod live_file;
+use live_file::SoyLiveFile;
 
 macro_rules! ok_or_err {
     ($res:expr) => {
@@ -325,35 +327,6 @@ fn multi_get_cf<'a>(db: DB, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bi
             None => None,
         })
         .collect()
-}
-
-#[derive(Debug, NifStruct)]
-#[must_use] // Added to test Issue #152
-#[module = "Soy.LiveFile"]
-pub struct SoyLiveFile {
-    pub column_family_name: String,
-    pub name: String,
-    pub size: usize,
-    pub level: i32,
-    pub start_key: Option<Vec<u8>>,
-    pub end_key: Option<Vec<u8>>,
-    pub num_entries: u64,
-    pub num_deletions: u64,
-}
-
-impl From<LiveFile> for SoyLiveFile {
-    fn from(lf: LiveFile) -> Self {
-        SoyLiveFile {
-            column_family_name: lf.column_family_name,
-            name: lf.name,
-            size: lf.size,
-            level: lf.level,
-            start_key: lf.start_key,
-            end_key: lf.end_key,
-            num_entries: lf.num_entries,
-            num_deletions: lf.num_deletions,
-        }
-    }
 }
 
 #[rustler::nif]
