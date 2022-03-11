@@ -66,13 +66,13 @@ unsafe fn extend_lifetime_rss<'b>(r: RSnapshot<'b>) -> RSnapshot<'static> {
 }
 
 impl SnapshotResource {
-    fn new(db: SoyDB) -> SS {
+    fn new(db: SoyDB) -> SoySnapshot {
         let rss = unsafe { extend_lifetime_rss(db.rdb.snapshot()) };
         ResourceArc::new(SnapshotResource { rss, db })
     }
 }
 
-type SS = ResourceArc<SnapshotResource>;
+type SoySnapshot = ResourceArc<SnapshotResource>;
 
 #[rustler::nif]
 fn open(path: String, open_opts: SoyOpenOpts) -> SoyDB {
@@ -293,12 +293,12 @@ fn do_iter_key_value<'a>(env: Env<'a>, it: &SafeIter<'a>) -> Option<(Binary<'a>,
 }
 
 #[rustler::nif]
-fn snapshot(db: SoyDB) -> SS {
+fn snapshot(db: SoyDB) -> SoySnapshot {
     SnapshotResource::new(db)
 }
 
 #[rustler::nif]
-fn ss_fetch(ss: SS, key: Binary) -> NifResult<(Atom, Bin)> {
+fn ss_fetch(ss: SoySnapshot, key: Binary) -> NifResult<(Atom, Bin)> {
     match ss.rss.get(&key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
         Ok(None) => Err(Error::Atom("error")),
@@ -307,7 +307,7 @@ fn ss_fetch(ss: SS, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn ss_fetch_cf(ss: SS, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
+fn ss_fetch_cf(ss: SoySnapshot, name: String, key: Binary) -> NifResult<(Atom, Bin)> {
     let cf_handler = ss.db.rdb.cf_handle(&name[..]).unwrap();
     match ss.rss.get_cf(&cf_handler, &key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
@@ -360,12 +360,12 @@ fn delete_cf(db: SoyDB, name: String, key: Binary) -> NifResult<Atom> {
 }
 
 #[rustler::nif]
-fn ss_iter<'a>(ss: SS) -> SoyIter {
+fn ss_iter<'a>(ss: SoySnapshot) -> SoyIter {
     IterResource::from_ss(ss)
 }
 
 #[rustler::nif]
-fn ss_multi_get_cf<'a>(ss: SS, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bin>> {
+fn ss_multi_get_cf<'a>(ss: SoySnapshot, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bin>> {
     let rss = &ss.rss;
     let rdb = &ss.db.rdb;
     let cf_handle_keys: Vec<(Arc<rocksdb::BoundColumnFamily<'_>>, Binary)> = cf_and_keys
@@ -387,7 +387,7 @@ fn ss_multi_get_cf<'a>(ss: SS, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option
 }
 
 #[rustler::nif]
-fn ss_multi_get<'a>(ss: SS, keys: Vec<Binary>) -> Vec<Option<Bin>> {
+fn ss_multi_get<'a>(ss: SoySnapshot, keys: Vec<Binary>) -> Vec<Option<Bin>> {
     let keys_it = keys.iter().map(|k| (&k[..]).to_vec());
     ss.rss
         .multi_get(keys_it)

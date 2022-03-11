@@ -1,4 +1,4 @@
-use crate::{SoyDB, SoyIter, SS};
+use crate::{SoyDB, SoyIter, SoySnapshot};
 use rocksdb::{DBRawIteratorWithThreadMode, DB as RDB};
 use rustler::ResourceArc;
 use std::ops::Drop;
@@ -129,7 +129,7 @@ impl SafeIteration for SoyDB {
     }
 }
 
-impl SafeIteration for SS {
+impl SafeIteration for SoySnapshot {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
         SafeIter::new_unseeked(self.rss.raw_iterator())
     }
@@ -190,7 +190,7 @@ where
 }
 
 pub enum IterResource {
-    SS(OwnedResourceIter<SS>),
+    SS(OwnedResourceIter<SoySnapshot>),
     DB(OwnedResourceIter<SoyDB>),
 }
 
@@ -201,7 +201,7 @@ impl IterResource {
         ResourceArc::new(it)
     }
 
-    pub fn from_ss(ss: SS) -> SoyIter {
+    pub fn from_ss(ss: SoySnapshot) -> SoyIter {
         let res = OwnedResourceIter::new(ss);
         let it = IterResource::SS(res);
         ResourceArc::new(it)
