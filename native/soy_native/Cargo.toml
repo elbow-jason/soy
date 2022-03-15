@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 [dependencies]
 rustler = "0.24.0"
 rocksdb = {version = "0.18.0", features = ["multi-threaded-cf"]}
+thiserror = "1.0.30"
