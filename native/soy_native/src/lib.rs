@@ -1,3 +1,4 @@
+use rocksdb::properties as props;
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::{Options, Snapshot as RSnapshot, WriteBatch, DB as RocksDb, BoundColumnFamily};
 use rustler::{
@@ -7,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 mod iteration;
-use iteration::{IterLocker, IterResource, SafeIter};
+use iteration::{IterLocker, IterResource, SafeIter, WalIterator, WalRow};
 
 mod bin;
 use bin::{new_binary, Bin, BinStr};
@@ -56,6 +57,7 @@ mod atoms {
     rustler::atoms! {
         ok,
         error,
+        put,
     }
 }
 
@@ -148,6 +150,122 @@ fn fetch<'a>(db: SoyDb, key: Binary) -> NifResult<(Atom, Bin)> {
 #[rustler::nif]
 fn delete(db: SoyDb, key: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.delete(&key[..]))
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn flush(db: SoyDb) -> NifResult<Atom> {
+    ok_or_err!(db.rdb.flush())
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn flush_cf(db: SoyDb, name: BinStr) -> NifResult<Atom> {
+    let cf_handle = get_cf_handle(&db.rdb, &name).unwrap();
+    ok_or_err!(db.rdb.flush_cf(&cf_handle))
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn flush_wal(db: SoyDb, sync: bool) -> NifResult<Atom> {
+    ok_or_err!(db.rdb.flush_wal(sync))
+}
+
+#[rustler::nif]
+fn latest_sequence_number(db: SoyDb) -> u64 {
+    db.rdb.latest_sequence_number()
+}
+
+#[rustler::nif]
+fn get_updates_since(db: SoyDb, sequence_number: u64) -> Result<ResourceArc<WalIterator>, Error> {
+    let it = WalIterator::new(db, sequence_number)?;
+    Ok(ResourceArc::new(it))
+}
+
+#[derive(Debug, NifUntaggedEnum)]
+pub enum Prop {
+    String(String),
+    Int(u64),
+}
+
+#[rustler::nif]
+fn get_property(db: SoyDb, prop: &str) -> Option<Prop> {
+    do_get_property(&db.rdb, prop)
+}
+
+#[rustler::nif]
+fn list_properties(db: SoyDb) -> Vec<(String, Option<Prop>)> {
+    let rdb = &db.rdb;
+    vec![
+        prop_kv(rdb, props::ACTUAL_DELAYED_WRITE_RATE),
+        prop_kv(rdb, props::AGGREGATED_TABLE_PROPERTIES),
+        prop_kv(rdb, props::AGGREGATED_TABLE_PROPERTIES_AT_LEVEL),
+        prop_kv(rdb, props::BACKGROUND_ERRORS),
+        prop_kv(rdb, props::BASE_LEVEL),
+        prop_kv(rdb, props::BLOCK_CACHE_CAPACITY),
+        prop_kv(rdb, props::BLOCK_CACHE_PINNED_USAGE),
+        prop_kv(rdb, props::BLOCK_CACHE_USAGE),
+        prop_kv(rdb, props::CFSTATS),
+        prop_kv(rdb, props::CFSTATS_NO_FILE_HISTOGRAM),
+        prop_kv(rdb, props::CF_FILE_HISTOGRAM),
+        prop_kv(rdb, props::COMPACTION_PENDING),
+        prop_kv(rdb, props::COMPRESSION_RATIO_AT_LEVEL),
+        prop_kv(rdb, props::CURRENT_SUPER_VERSION_NUMBER),
+        prop_kv(rdb, props::CUR_SIZE_ACTIVE_MEM_TABLE),
+        prop_kv(rdb, props::CUR_SIZE_ALL_MEM_TABLES),
+        prop_kv(rdb, props::DBSTATS),
+        prop_kv(rdb, props::ESTIMATE_LIVE_DATA_SIZE),
+        prop_kv(rdb, props::ESTIMATE_NUM_KEYS),
+        prop_kv(rdb, props::ESTIMATE_OLDEST_KEY_TIME),
+        prop_kv(rdb, props::ESTIMATE_PENDING_COMPACTION_BYTES),
+        prop_kv(rdb, props::ESTIMATE_TABLE_READERS_MEM),
+        prop_kv(rdb, props::IS_FILE_DELETIONS_ENABLED),
+        prop_kv(rdb, props::IS_WRITE_STOPPED),
+        prop_kv(rdb, props::LEVELSTATS),
+        prop_kv(rdb, props::LIVE_SST_FILES_SIZE),
+        prop_kv(rdb, props::MEM_TABLE_FLUSH_PENDING),
+        prop_kv(rdb, props::MIN_LOG_NUMBER_TO_KEEP),
+        prop_kv(rdb, props::MIN_OBSOLETE_SST_NUMBER_TO_KEEP),
+        prop_kv(rdb, props::NUM_DELETES_ACTIVE_MEM_TABLE),
+        prop_kv(rdb, props::NUM_DELETES_IMM_MEM_TABLES),
+        prop_kv(rdb, props::NUM_ENTRIES_ACTIVE_MEM_TABLE),
+        prop_kv(rdb, props::NUM_ENTRIES_IMM_MEM_TABLES),
+        prop_kv(rdb, props::NUM_FILES_AT_LEVEL_PREFIX),
+        prop_kv(rdb, props::NUM_IMMUTABLE_MEM_TABLE),
+        prop_kv(rdb, props::NUM_IMMUTABLE_MEM_TABLE_FLUSHED),
+        prop_kv(rdb, props::NUM_LIVE_VERSIONS),
+        prop_kv(rdb, props::NUM_RUNNING_COMPACTIONS),
+        prop_kv(rdb, props::NUM_RUNNING_FLUSHES),
+        prop_kv(rdb, props::NUM_SNAPSHOTS),
+        prop_kv(rdb, props::OLDEST_SNAPSHOT_TIME),
+        prop_kv(rdb, props::NUM_RUNNING_COMPACTIONS),
+        prop_kv(rdb, props::OPTIONS_STATISTICS),
+        prop_kv(rdb, props::SIZE_ALL_MEM_TABLES),
+        prop_kv(rdb, props::SSTABLES),
+        prop_kv(rdb, props::STATS),
+        prop_kv(rdb, props::TOTAL_SST_FILES_SIZE),
+    ]
+}
+
+fn prop_kv(rdb: &RocksDb, prop: &str) -> (String, Option<Prop>) {
+    (prop.to_string(), do_get_property(rdb, prop))
+}
+
+
+fn do_get_property(db: &RocksDb, prop: &str) -> Option<Prop> {
+    match db.property_int_value(prop) {
+        Ok(Some(int)) => Some(Prop::Int(int)),
+        Ok(None) => None,
+        Err(_) => {
+            match db.property_value(prop) {
+                Ok(Some(val)) => Some(Prop::String(val)),
+                Ok(None) => None,
+                Err(e) => panic!("{}", e),
+            }
+        }
+    }
+}
+
+#[rustler::nif]
+fn wal_iter_next(w: ResourceArc<WalIterator>) -> Option<(u64, Vec<WalRow>)> {
+    w.next()
 }
 
 #[rustler::nif]
@@ -433,6 +551,7 @@ fn load(env: Env, _: Term) -> bool {
     rustler::resource!(DbResource, env);
     rustler::resource!(IterResource, env);
     rustler::resource!(SnapshotResource, env);
+    rustler::resource!(WalIterator, env);
     true
 }
 
@@ -449,7 +568,12 @@ rustler::init!(
         delete,
         batch,
 
+        // flushing/sync
+        flush,
+        flush_wal,
+        flush_cf,
 
+        // iter creation
         db_iter,
         db_iter_cf,
         ss_iter,
@@ -485,6 +609,10 @@ rustler::init!(
         iter_seek,
         // iter_seek_for_prev,
         iter_valid,
+
+        // props
+        get_property,
+        list_properties,
     ],
     load = load
 );

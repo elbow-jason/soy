@@ -11,6 +11,11 @@ defmodule Soy.Native do
   def checkpoint(_db, _checkpoint_path), do: err()
   def repair(_path), do: err()
 
+  # flush/sync to disk
+  def flush(_db), do: err()
+  def flush_wal(_db, _sync), do: err()
+  def flush_cf(_db, _name), do: err()
+
   # metadata
   def list_cf(_path), do: err()
   def path(_db), do: err()
@@ -63,4 +68,8 @@ defmodule Soy.Native do
 
   # read opts
   def read_opts_default, do: err()
+
+  # properties
+  def get_property(_db, _prop), do: err()
+  def list_properties(_db), do: err()
 end

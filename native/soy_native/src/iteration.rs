@@ -1,11 +1,11 @@
-use crate::{SoyDb, SoyIter, SoySnapshot};
-use rocksdb::{DBRawIteratorWithThreadMode, DB as RDB};
-use rustler::ResourceArc;
+use crate::{SoyDb, SoyIter, SoySnapshot, Error, new_binary, atoms};
+use rocksdb::{DBRawIteratorWithThreadMode, DB as RocksDb, DBWALIterator, WriteBatchIterator};
+use rustler::{ResourceArc, Encoder, Env, Term};
 use std::ops::Drop;
 
 use std::sync::RwLock;
 
-pub type RocksIter<'a> = DBRawIteratorWithThreadMode<'a, RDB>;
+pub type RocksIter<'a> = DBRawIteratorWithThreadMode<'a, RocksDb>;
 
 /// A RockIter that has not been seeked will segfault
 /// despite it not being an `unsafe` call.
@@ -251,6 +251,73 @@ impl IterLocker for IterResource {
         }
     }
 }
+
+pub struct WalIterator {
+    _db: SoyDb,
+    it: RwLock<DBWALIterator>,
+}
+
+unsafe impl Send for WalIterator {}
+unsafe impl Sync for WalIterator {}
+
+impl WalIterator {
+    pub fn new(db: SoyDb, since: u64) -> Result<WalIterator, Error> {
+        let it = db.rdb.get_updates_since(since).map_err(|e| Error::WalIteratorCreationError(format!("{}", e)))?;
+        Ok(WalIterator {
+            _db: db,
+            it: RwLock::new(it),
+        })
+    }
+
+    pub fn next(&self) -> Option<(u64, Vec<WalRow>)> {
+        let mut it = self.it.write().unwrap();
+        if it.valid() {
+            match it.next() {
+                None => None,
+                Some((seq_number, write_batch)) => {
+                    let mut list = WalBatchList{items: Vec::new()};
+                    write_batch.iterate(&mut list);
+                    Some((seq_number, list.items))
+                }
+            }
+        } else {
+            None
+        }
+    }
+}
+
+pub enum WalRow {
+    Put{key: Box<[u8]>, value: Box<[u8]>},
+    Delete{key: Box<[u8]>}
+}
+
+impl Encoder for WalRow {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
+        match self {
+            WalRow::Put{key: ref k, value: ref v} => {
+                (atoms::put(), new_binary(&k[..], env), new_binary(&v[..], env)).encode(env)
+            }
+            WalRow::Delete{key: ref k} => {
+                (atoms::put(), new_binary(&k[..], env)).encode(env)
+            }
+        }   
+    }
+}
+
+pub struct WalBatchList {
+    items: Vec<WalRow>,
+}
+
+impl WriteBatchIterator for WalBatchList {
+    fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
+        self.items.push(WalRow::Put{ key, value });
+    }
+
+    fn delete(&mut self, key: Box<[u8]>) {
+        self.items.push(WalRow::Delete{ key });
+    }
+}
+
 
 // #[derive(NifRecord)]
 // #[tag = "prefix"]
