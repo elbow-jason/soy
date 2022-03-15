@@ -35,6 +35,14 @@ defmodule Soy.Iter do
   def new(store)
   def new({DB, db}), do: {Iter, DB, Native.db_iter(db)}
   def new({Snapshot, ss}), do: {Iter, Snapshot, Native.ss_iter(ss)}
+  def new({ColFam, {db, cf}}), do: new({Db, db}, cf)
+
+  def new(store, cf_name) do
+    case store do
+      {DB, db} -> {Iter, {ColFam, cf_name}, Native.db_iter_cf(db, cf_name)}
+      {Snapshot, ss} -> {Iter, {ColFam, cf_name}, Native.ss_iter_cf(ss, cf_name)}
+    end
+  end
 
   # def prefix({DB, db}, prefix), do: new(db, {:prefix, prefix})
 

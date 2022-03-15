@@ -1,7 +1,7 @@
 defmodule Soy.IterTest do
   use ExUnit.Case
   import Soy.TestHelpers
-  alias Soy.{Iter, ColFam}
+  alias Soy.{Iter, ColFam, Snapshot}
   doctest Soy.Iter
 
   setup do
@@ -184,6 +184,31 @@ defmodule Soy.IterTest do
       assert Iter.prev(it) == nil
       assert Iter.valid?(it) == false
       assert Iter.value(it) == nil
+    end
+  end
+
+  describe "new/2" do
+    test "returns a cf iter for a db", %{db: db} do
+      it = Iter.new(db, "things")
+      assert Iter.valid?(it) == true
+      assert Iter.next(it) == {"tk1", "tv1"}
+      assert Iter.next(it) == {"tk2", "tv2"}
+      assert Iter.next(it) == {"tk3", "tv3"}
+      assert Iter.next(it) == nil
+    end
+
+    test "returns a cf iter for a snapshot", %{db: db} do
+      ss = Snapshot.new(db)
+      it = Iter.new(ss, "things")
+      cf = ColFam.build(db, "things")
+      :ok = Soy.put(cf, "beep", "boop")
+      assert Iter.valid?(it) == true
+      assert Iter.next(it) == {"tk1", "tv1"}
+      assert Iter.next(it) == {"tk2", "tv2"}
+      assert Iter.next(it) == {"tk3", "tv3"}
+      assert Iter.next(it) == nil
+      cf = ColFam.build(db, "things")
+      :ok = Soy.put(cf, "beep", "boop")
     end
   end
 

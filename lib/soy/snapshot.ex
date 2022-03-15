@@ -10,8 +10,6 @@ defmodule Soy.Snapshot do
 
   def fetch_cf(ss, cf, key), do: Native.ss_fetch_cf(to_ref(ss), ColFam.name(cf), key)
 
-  # def iter(ss), do: Native.ss_iter(ss)
-
   def multi_get(ss, keys), do: Native.ss_multi_get(to_ref(ss), keys)
 
   def multi_get_cf(ss, cf_and_key_pairs), do: Native.ss_multi_get_cf(to_ref(ss), cf_and_key_pairs)
