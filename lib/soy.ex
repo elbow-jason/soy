@@ -58,27 +58,4 @@ defmodule Soy do
   def batch({DB, _} = db, ops) do
     DB.batch(db, ops)
   end
-
-  if Mix.env() == :dev do
-    def crash do
-      alias Soy.Iter
-      db = Soy.open(Soy.TestHelpers.tmp_dir())
-      ops = [{:put, "k2", "v2"}, {:put, "k3", "v3"}, {:put, "k1", "v1"}]
-      3 = Soy.batch(db, ops)
-      it = Iter.new(db)
-      {"k1", "v1"} = Iter.next(it)
-      {"k2", "v2"} = Iter.next(it)
-      {"k3", "v3"} = Iter.next(it)
-      nil = Iter.next(it)
-    end
-
-    def crash2 do
-      alias Soy.Iter
-      db = Soy.open(Soy.TestHelpers.tmp_dir())
-      it = Iter.new(db)
-      nil = Iter.next(it)
-      nil = Iter.next(it)
-      nil = Iter.next(it)
-    end
-  end
 end
