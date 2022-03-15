@@ -29,7 +29,9 @@ defmodule Soy.Native do
 
   # iteration for both db and cf based on itermode
   def db_iter(_db), do: err()
+  def db_iter_cf(_db, _name), do: err()
   def ss_iter(_ss), do: err()
+  def ss_iter_cf(_ss, _name), do: err()
 
   def iter_seek(_db_iter, _seek), do: err()
 

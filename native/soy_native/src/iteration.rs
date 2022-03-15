@@ -121,17 +121,30 @@ impl<'a> SafeIter<'a> {
 
 pub trait SafeIteration {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a>;
+    fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a>;
 }
 
 impl SafeIteration for SoyDb {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
         SafeIter::new_unseeked(self.rdb.raw_iterator())
     }
+
+    fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
+        let cf_handle = self.rdb.cf_handle(name).unwrap();
+        let it = self.rdb.raw_iterator_cf(&cf_handle);
+        SafeIter::new_unseeked(it)
+    }
 }
 
 impl SafeIteration for SoySnapshot {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
         SafeIter::new_unseeked(self.rss.raw_iterator())
+    }
+
+    fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
+        let cf_handle = self.db.rdb.cf_handle(name).unwrap();
+        let it = self.rss.raw_iterator_cf(&cf_handle);
+        SafeIter::new_unseeked(it)
     }
 }
 
@@ -178,6 +191,12 @@ where
         let it = RwLock::new(it_unlocked);
         OwnedResourceIter { _res: res, it }
     }
+
+    fn new_cf(res: T, name: &str) -> OwnedResourceIter<T> {
+        let it_unlocked = unsafe { extend_lifetime_safe_iter(res.safe_iter_cf(name)) };
+        let it = RwLock::new(it_unlocked);
+        OwnedResourceIter { _res: res, it }
+    }
 }
 
 impl<T> IterLocker for OwnedResourceIter<T>
@@ -191,7 +210,9 @@ where
 
 pub enum IterResource {
     Ss(OwnedResourceIter<SoySnapshot>),
+    SsCf(OwnedResourceIter<SoySnapshot>),
     Db(OwnedResourceIter<SoyDb>),
+    DbCf(OwnedResourceIter<SoyDb>),
 }
 
 impl IterResource {
@@ -201,9 +222,21 @@ impl IterResource {
         ResourceArc::new(it)
     }
 
+    pub fn from_db_cf(db: SoyDb, name: &str) -> SoyIter {
+        let res = OwnedResourceIter::new_cf(db, name);
+        let it = IterResource::DbCf(res);
+        ResourceArc::new(it)
+    }
+
     pub fn from_ss(ss: SoySnapshot) -> SoyIter {
         let res = OwnedResourceIter::new(ss);
         let it = IterResource::Ss(res);
+        ResourceArc::new(it)
+    }
+
+    pub fn from_ss_cf(ss: SoySnapshot, name: &str) -> SoyIter {
+        let res = OwnedResourceIter::new_cf(ss, name);
+        let it = IterResource::SsCf(res);
         ResourceArc::new(it)
     }
 }
@@ -213,6 +246,8 @@ impl IterLocker for IterResource {
         match self {
             IterResource::Ss(res) => res.lock(),
             IterResource::Db(res) => res.lock(),
+            IterResource::SsCf(res) => res.lock(),
+            IterResource::DbCf(res) => res.lock(),
         }
     }
 }

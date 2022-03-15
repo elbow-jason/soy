@@ -220,6 +220,11 @@ fn db_iter<'a>(db: SoyDb) -> SoyIter {
     IterResource::from_db(db)
 }
 
+#[rustler::nif]
+fn db_iter_cf<'a>(db: SoyDb, name: String) -> SoyIter {
+    IterResource::from_db_cf(db, &name[..])
+}
+
 #[derive(Debug, NifUnitEnum)]
 enum SeekAtom {
     First,
@@ -365,6 +370,11 @@ fn ss_iter<'a>(ss: SoySnapshot) -> SoyIter {
 }
 
 #[rustler::nif]
+fn ss_iter_cf<'a>(ss: SoySnapshot, name: String) -> SoyIter {
+    IterResource::from_ss_cf(ss, &name[..])
+}
+
+#[rustler::nif]
 fn ss_multi_get_cf<'a>(ss: SoySnapshot, cf_and_keys: Vec<(String, Binary)>) -> Vec<Option<Bin>> {
     let rss = &ss.rss;
     let rdb = &ss.db.rdb;
@@ -428,7 +438,14 @@ rustler::init!(
         fetch,
         delete,
         batch,
+
+
         db_iter,
+        db_iter_cf,
+        ss_iter,
+        ss_iter_cf,
+
+
         multi_get,
         live_files,
         list_cf,
@@ -442,7 +459,7 @@ rustler::init!(
         snapshot,
         ss_fetch,
         ss_fetch_cf,
-        ss_iter,
+        
         ss_multi_get,
         ss_multi_get_cf,
         // write_opts
