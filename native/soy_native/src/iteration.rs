@@ -1,4 +1,4 @@
-use crate::{SoyDB, SoyIter, SoySnapshot};
+use crate::{SoyDb, SoyIter, SoySnapshot};
 use rocksdb::{DBRawIteratorWithThreadMode, DB as RDB};
 use rustler::ResourceArc;
 use std::ops::Drop;
@@ -123,7 +123,7 @@ pub trait SafeIteration {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a>;
 }
 
-impl SafeIteration for SoyDB {
+impl SafeIteration for SoyDb {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
         SafeIter::new_unseeked(self.rdb.raw_iterator())
     }
@@ -190,20 +190,20 @@ where
 }
 
 pub enum IterResource {
-    SS(OwnedResourceIter<SoySnapshot>),
-    DB(OwnedResourceIter<SoyDB>),
+    Ss(OwnedResourceIter<SoySnapshot>),
+    Db(OwnedResourceIter<SoyDb>),
 }
 
 impl IterResource {
-    pub fn from_db(db: SoyDB) -> SoyIter {
+    pub fn from_db(db: SoyDb) -> SoyIter {
         let res = OwnedResourceIter::new(db);
-        let it = IterResource::DB(res);
+        let it = IterResource::Db(res);
         ResourceArc::new(it)
     }
 
     pub fn from_ss(ss: SoySnapshot) -> SoyIter {
         let res = OwnedResourceIter::new(ss);
-        let it = IterResource::SS(res);
+        let it = IterResource::Ss(res);
         ResourceArc::new(it)
     }
 }
@@ -211,8 +211,8 @@ impl IterResource {
 impl IterLocker for IterResource {
     fn lock(&self) -> &RwLock<SafeIter<'static>> {
         match self {
-            IterResource::SS(res) => res.lock(),
-            IterResource::DB(res) => res.lock(),
+            IterResource::Ss(res) => res.lock(),
+            IterResource::Db(res) => res.lock(),
         }
     }
 }
