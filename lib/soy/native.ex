@@ -43,7 +43,6 @@ defmodule Soy.Native do
   def db_iter(_db), do: err()
 
   def ss_iter(_ss), do: err()
-  def ss_iter_cf(_ss, _name), do: err()
 
   def iter_seek(_db_iter, _seek), do: err()
 
@@ -55,10 +54,8 @@ defmodule Soy.Native do
   # snapshot
   def db_snapshot(_db), do: err()
   def ss_fetch(_ss, _key), do: err()
-  def ss_fetch_cf(_ss, _cf, _key), do: err()
-
   def ss_multi_get(_ss, _keys), do: err()
-  def ss_multi_get_cf(_ss, _cf_and_key_pairs), do: err()
+  def ss_open_ss_cf(_ss, _cf_name), do: err()
 
   # write opts
   def write_opts_default, do: err()
@@ -70,6 +67,7 @@ defmodule Soy.Native do
   def db_get_property(_db, _prop), do: err()
   def db_list_properties(_db), do: err()
 
+  # db col fam ops
   def db_cf_delete(_cf, _key), do: err()
   def db_cf_put(_cf, _key, _value), do: err()
   def db_cf_fetch(_cf, _key), do: err()
@@ -77,8 +75,15 @@ defmodule Soy.Native do
   def db_cf_key_may_exist(_cf, _key), do: err()
   def db_cf_has_key(_cf, _key), do: err()
   def db_cf_name(_cf), do: err()
-  def db_cf_to_db(_cf), do: err()
+  def db_cf_into_db(_cf), do: err()
   def db_cf_iter(_cf), do: err()
   def db_cf_flush(_cf), do: err()
   def db_cf_multi_get(_cf_key_pairs), do: err()
+
+  # snapshot cf ops
+  def ss_cf_multi_get(_ss_cf_and_key_pairs), do: err()
+  def ss_cf_fetch(_ss_cf, _key), do: err()
+  def ss_cf_iter(_ss_cf), do: err()
+  def ss_cf_name(_ss_cf), do: err()
+  def ss_cf_into_ss(_ss_cf), do: err()
 end

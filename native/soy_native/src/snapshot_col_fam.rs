@@ -1,24 +1,24 @@
-use crate::{Error, SoyDb};
-use rocksdb::{ColumnFamilyRef, DB as RocksDb};
+use crate::{Error, SoySnapshot};
+use rocksdb::{ColumnFamilyRef, Snapshot as RSnapshot, DB as RocksDb};
 use rustler::ResourceArc;
 
-pub type SoyDbColFam = ResourceArc<DbColFamResource>;
+pub type SoySsColFam = ResourceArc<SsColFamResource>;
 
-pub struct DbColFamResource {
-    db: SoyDb,
+pub struct SsColFamResource {
+    ss: SoySnapshot,
     cf_name: String,
     cf_ref: ColumnFamilyRef<'static>,
 }
 
-unsafe impl Send for DbColFamResource {}
-unsafe impl Sync for DbColFamResource {}
+unsafe impl Send for SsColFamResource {}
+unsafe impl Sync for SsColFamResource {}
 
-impl DbColFamResource {
-    pub fn new(db: &SoyDb, name: &str) -> Result<DbColFamResource, Error> {
-        let db_ref = db.rocks_db_ref();
+impl SsColFamResource {
+    pub fn new(ss: &SoySnapshot, name: &str) -> Result<SsColFamResource, Error> {
+        let db_ref = ss.soy_db().rocks_db_ref();
         let cf_ref = get_cf_handle(db_ref, name)?;
-        Ok(DbColFamResource {
-            db: db.clone(),
+        Ok(SsColFamResource {
+            ss: ss.clone(),
             cf_name: name.to_owned(),
             cf_ref: unsafe { extend_lifetime_cf(cf_ref) },
         })
@@ -28,12 +28,16 @@ impl DbColFamResource {
         unsafe { unextend_lifetime_cf(&self.cf_ref) }
     }
 
-    pub fn rocks_db_ref(&self) -> &RocksDb {
-        &self.db.rocks_db_ref()
+    // pub fn rocks_db_ref(&self) -> &RocksDb {
+    //     &self.ss.rocks_db_ref()
+    // }
+
+    pub fn rocks_ss_ref(&self) -> &RSnapshot {
+        &self.ss.rocks_ss_ref()
     }
 
-    pub fn soy_db(&self) -> &SoyDb {
-        &self.db
+    pub fn soy_snapshot(&self) -> &SoySnapshot {
+        &self.ss
     }
 
     pub fn name(&self) -> &str {

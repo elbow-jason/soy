@@ -1,12 +1,11 @@
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::properties as props;
-use rocksdb::{ColumnFamilyRef, Options, Snapshot as RSnapshot, WriteBatch, DB as RocksDb};
+use rocksdb::{ColumnFamilyRef, Options, WriteBatch, DB as RocksDb};
 use rustler::{
     Atom, Binary, Env, Error as NifError, NifRecord, NifResult, NifUnitEnum, NifUntaggedEnum,
     ResourceArc, Term,
 };
 use std::path::Path;
-use std::sync::Arc;
 
 mod iteration;
 use iteration::{IterLocker, IterResource, SafeIter, WalIterator, WalRow};
@@ -37,8 +36,16 @@ pub mod merger;
 mod db_col_fam;
 use db_col_fam::{DbColFamResource, SoyDbColFam};
 
+mod snapshot_col_fam;
+use snapshot_col_fam::{SoySsColFam, SsColFamResource};
+
+mod snapshot;
+use snapshot::SnapshotResource;
+
 mod soy_db;
 use soy_db::{DbResource, SoyDb};
+
+type SoySnapshot = ResourceArc<SnapshotResource>;
 
 macro_rules! ok_or_err {
     ($res:expr) => {
@@ -58,24 +65,6 @@ mod atoms {
         put,
     }
 }
-
-pub struct SnapshotResource {
-    rss: RSnapshot<'static>,
-    db: SoyDb,
-}
-
-unsafe fn extend_lifetime_rss<'b>(r: RSnapshot<'b>) -> RSnapshot<'static> {
-    std::mem::transmute::<RSnapshot<'b>, RSnapshot<'static>>(r)
-}
-
-impl SnapshotResource {
-    fn new(db: SoyDb) -> SoySnapshot {
-        let rss = unsafe { extend_lifetime_rss(db.rocks_db_ref().snapshot()) };
-        ResourceArc::new(SnapshotResource { rss, db })
-    }
-}
-
-type SoySnapshot = ResourceArc<SnapshotResource>;
 
 #[rustler::nif]
 fn path_open_db(path: BinStr, open_opts: SoyOpenOpts) -> SoyDb {
@@ -357,9 +346,7 @@ fn db_iter<'a>(db: SoyDb) -> SoyIter {
 
 #[rustler::nif]
 fn db_cf_iter<'a>(db_cf: SoyDbColFam) -> SoyIter {
-    let db = db_cf.soy_db().clone();
-    let name = db_cf.name();
-    IterResource::from_db_cf(db, name)
+    IterResource::from_db_cf(db_cf)
 }
 
 #[derive(Debug, NifUnitEnum)]
@@ -441,7 +428,7 @@ fn db_snapshot(db: SoyDb) -> SoySnapshot {
 
 #[rustler::nif]
 fn ss_fetch(ss: SoySnapshot, key: Binary) -> NifResult<(Atom, Bin)> {
-    match ss.rss.get(&key[..]) {
+    match ss.rocks_ss_ref().get(&key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
         Ok(None) => Err(NifError::Atom("error")),
         Err(e) => panic!("{}", e),
@@ -449,13 +436,9 @@ fn ss_fetch(ss: SoySnapshot, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn ss_fetch_cf(ss: SoySnapshot, name: BinStr, key: Binary) -> NifResult<(Atom, Bin)> {
-    let cf_handler = get_cf_handle(&ss.db.rocks_db_ref(), &name).unwrap();
-    match ss.rss.get_cf(&cf_handler, &key[..]) {
-        Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
-        Ok(None) => Err(NifError::Atom("error")),
-        Err(e) => panic!("error: {:?}", e),
-    }
+fn ss_open_ss_cf(ss: SoySnapshot, name: BinStr) -> NifResult<SoySsColFam> {
+    let ss_cf = SsColFamResource::new(&ss, &name[..])?;
+    Ok(ResourceArc::new(ss_cf))
 }
 
 #[rustler::nif]
@@ -504,7 +487,7 @@ fn db_cf_name(env: Env, db_cf: SoyDbColFam) -> Binary {
 }
 
 #[rustler::nif]
-fn db_cf_to_db(db_cf: SoyDbColFam) -> SoyDb {
+fn db_cf_into_db(db_cf: SoyDbColFam) -> SoyDb {
     db_cf.soy_db().clone()
 }
 
@@ -550,40 +533,10 @@ fn db_drop_cf(db: SoyDb, name: BinStr) -> NifResult<Atom> {
     ok_or_err!(db.rocks_db_ref().drop_cf(&name[..]))
 }
 
-// #[rustler::nif]
-// fn db_put_cf(db: SoyDb, name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
-//     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
-//     ok_or_err!(db.rocks_db_ref().put_cf(&cf_handler, &key[..], &val[..]))
-// }
-
-// #[rustler::nif]
-// fn db_fetch_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<(Atom, Bin)> {
-
-//     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
-//     match db.rocks_db_ref().get_cf(&cf_handler, &key[..]) {
-//         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
-//         Ok(None) => Err(NifError::Atom("error")),
-//         Err(e) => panic!("error: {:?}", e),
-//     }
-// }
-
-// #[rustler::nif]
-// fn db_delete_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<Atom> {
-//     let rdb = db.rocks_db_ref();
-//     let cf_handler = get_cf_handle(rdb, &name).unwrap();
-//     ok_or_err!(rdb.delete_cf(&cf_handler, &key[..]))
-// }
-
 #[rustler::nif]
 fn db_key_may_exist(db: SoyDb, key: Binary) -> bool {
     db.rocks_db_ref().key_may_exist(&key[..])
 }
-
-// #[rustler::nif]
-// fn db_key_may_exist_cf(db: SoyDb, cf: BinStr, key: Binary) -> bool {
-//     let cf_handle = get_cf_handle(&db.rdb, &cf[..]).unwrap();
-//     db.rdb.key_may_exist_cf(&cf_handle, &key[..])
-// }
 
 #[rustler::nif]
 fn db_has_key(db: SoyDb, key: Binary) -> bool {
@@ -605,23 +558,39 @@ fn ss_iter<'a>(ss: SoySnapshot) -> SoyIter {
 }
 
 #[rustler::nif]
-fn ss_iter_cf<'a>(ss: SoySnapshot, name: BinStr) -> SoyIter {
-    IterResource::from_ss_cf(ss, &name[..])
+fn ss_cf_fetch(ss_cf: SoySsColFam, key: Binary) -> NifResult<(Atom, Bin)> {
+    let handle = ss_cf.handle();
+    match ss_cf.rocks_ss_ref().get_cf(handle, &key[..]) {
+        Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
+        Ok(None) => Err(NifError::Atom("error")),
+        Err(e) => panic!("error: {:?}", e),
+    }
 }
 
 #[rustler::nif]
-fn ss_multi_get_cf<'a>(ss: SoySnapshot, cf_and_keys: Vec<(BinStr, Binary)>) -> Vec<Option<Bin>> {
-    let rss = &ss.rss;
-    let rdb = &ss.db.rocks_db_ref();
-    let cf_handle_keys: Vec<(Arc<rocksdb::BoundColumnFamily<'_>>, Binary)> = cf_and_keys
-        .into_iter()
-        .map(|(cf_name, key)| {
-            let cf_handle = get_cf_handle(&rdb, &cf_name).unwrap();
-            (cf_handle, key)
-        })
-        .collect();
-    let keys_it = cf_handle_keys.iter().map(|(h, k)| (&*h, &k[..]));
-    rss.multi_get_cf(keys_it)
+fn ss_cf_iter<'a>(ss_cf: SoySsColFam) -> SoyIter {
+    IterResource::from_ss_cf(ss_cf)
+}
+
+#[rustler::nif]
+fn ss_cf_name<'a>(env: Env, ss_cf: SoySsColFam) -> Binary {
+    new_binary(ss_cf.name().as_bytes(), env)
+}
+
+#[rustler::nif]
+fn ss_cf_into_ss(ss_cf: SoySsColFam) -> SoySnapshot {
+    ss_cf.soy_snapshot().clone()
+}
+
+#[rustler::nif]
+fn ss_cf_multi_get<'a>(pairs: Vec<(SoySsColFam, Binary)>) -> Vec<Option<Bin>> {
+    if pairs.len() == 0 {
+        return vec![];
+    }
+    let ss_cf = pairs.first().unwrap().clone().0;
+    let rss = ss_cf.rocks_ss_ref();
+    let pairs_it = pairs.iter().map(|(h, k)| (h.handle(), &k[..]));
+    rss.multi_get_cf(pairs_it)
         .into_iter()
         .map(|v| match v.unwrap() {
             Some(data) => Some(Bin::from_vec(data)),
@@ -633,7 +602,7 @@ fn ss_multi_get_cf<'a>(ss: SoySnapshot, cf_and_keys: Vec<(BinStr, Binary)>) -> V
 #[rustler::nif]
 fn ss_multi_get<'a>(ss: SoySnapshot, keys: Vec<Binary>) -> Vec<Option<Bin>> {
     let keys_it = keys.iter().map(|k| (&k[..]).to_vec());
-    ss.rss
+    ss.rocks_ss_ref()
         .multi_get(keys_it)
         .into_iter()
         .map(|v| match v.unwrap() {
@@ -656,6 +625,7 @@ fn read_opts_default() -> SoyReadOpts {
 fn load(env: Env, _: Term) -> bool {
     rustler::resource!(DbResource, env);
     rustler::resource!(DbColFamResource, env);
+    rustler::resource!(SsColFamResource, env);
     rustler::resource!(IterResource, env);
     rustler::resource!(SnapshotResource, env);
     rustler::resource!(WalIterator, env);
@@ -679,21 +649,15 @@ rustler::init!(
         db_delete,
         db_batch,
         db_merge,
-        // write cf ops
+        // cf create/open/drop ops
         db_open_existing_cf,
         db_create_new_cf,
-        // db_delete_cf,
-        // db_merge_cf,
         db_drop_cf,
-        // db_put_cf,
         // read ops
         db_fetch,
         db_multi_get,
         db_key_may_exist,
-        // db_key_may_exist_cf,
         db_has_key,
-        // read cf ops
-        // db_fetch_cf,
         // flushing/sync
         db_flush,
         db_flush_wal,
@@ -707,12 +671,10 @@ rustler::init!(
         db_live_files,
         // snapshot ops
         ss_iter,
-        ss_iter_cf,
         // snapshot funcs
         ss_fetch,
-        ss_fetch_cf,
         ss_multi_get,
-        ss_multi_get_cf,
+        ss_open_ss_cf,
         // write_opts
         write_opts_default,
         // read_opts_default
@@ -723,11 +685,11 @@ rustler::init!(
         iter_key_value,
         iter_seek,
         iter_valid,
-        // new cf_ops
+        // cf resource ops
         db_cf_put,
         db_cf_fetch,
         db_cf_name,
-        db_cf_to_db,
+        db_cf_into_db,
         db_cf_delete,
         db_cf_merge,
         db_cf_key_may_exist,
@@ -735,6 +697,12 @@ rustler::init!(
         db_cf_multi_get,
         db_cf_flush,
         db_cf_iter,
+        // cf_ss resource ops
+        ss_cf_fetch,
+        ss_cf_multi_get,
+        ss_cf_iter,
+        ss_cf_name,
+        ss_cf_into_ss,
     ],
     load = load
 );
@@ -748,3 +716,33 @@ pub(crate) fn get_cf_handle<'a>(
         None => Err(Error::ColumnFamilyDoesNotExist(name.to_string())),
     }
 }
+
+// #[rustler::nif]
+// fn db_key_may_exist_cf(db: SoyDb, cf: BinStr, key: Binary) -> bool {
+//     let cf_handle = get_cf_handle(&db.rdb, &cf[..]).unwrap();
+//     db.rdb.key_may_exist_cf(&cf_handle, &key[..])
+// }
+
+// #[rustler::nif]
+// fn db_put_cf(db: SoyDb, name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
+//     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
+//     ok_or_err!(db.rocks_db_ref().put_cf(&cf_handler, &key[..], &val[..]))
+// }
+
+// #[rustler::nif]
+// fn db_fetch_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<(Atom, Bin)> {
+
+//     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
+//     match db.rocks_db_ref().get_cf(&cf_handler, &key[..]) {
+//         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
+//         Ok(None) => Err(NifError::Atom("error")),
+//         Err(e) => panic!("error: {:?}", e),
+//     }
+// }
+
+// #[rustler::nif]
+// fn db_delete_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<Atom> {
+//     let rdb = db.rocks_db_ref();
+//     let cf_handler = get_cf_handle(rdb, &name).unwrap();
+//     ok_or_err!(rdb.delete_cf(&cf_handler, &key[..]))
+// }

@@ -1,4 +1,4 @@
-use crate::{atoms, new_binary, Error, SoyDb, SoyIter, SoySnapshot};
+use crate::{atoms, new_binary, Error, SoyDb, SoyDbColFam, SoyIter, SoySnapshot, SoySsColFam};
 use rocksdb::{DBRawIteratorWithThreadMode, DBWALIterator, WriteBatchIterator, DB as RocksDb};
 use rustler::{Encoder, Env, ResourceArc, Term};
 use std::ops::Drop;
@@ -121,7 +121,6 @@ impl<'a> SafeIter<'a> {
 
 pub trait SafeIteration {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a>;
-    fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a>;
 }
 
 impl SafeIteration for SoyDb {
@@ -129,21 +128,31 @@ impl SafeIteration for SoyDb {
         SafeIter::new_unseeked(self.rocks_db_ref().raw_iterator())
     }
 
-    fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
-        let cf_handle = self.rocks_db_ref().cf_handle(name).unwrap();
-        let it = self.rocks_db_ref().raw_iterator_cf(&cf_handle);
+    // fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
+    //     let cf_handle = self.rocks_db_ref().cf_handle(name).unwrap();
+    //     let it = self.rocks_db_ref().raw_iterator_cf(&cf_handle);
+    //     SafeIter::new_unseeked(it)
+    // }
+}
+
+impl SafeIteration for SoyDbColFam {
+    fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
+        let handle = self.handle();
+        let it = self.rocks_db_ref().raw_iterator_cf(handle);
         SafeIter::new_unseeked(it)
     }
 }
 
 impl SafeIteration for SoySnapshot {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
-        SafeIter::new_unseeked(self.rss.raw_iterator())
+        SafeIter::new_unseeked(self.rocks_ss_ref().raw_iterator())
     }
+}
 
-    fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
-        let cf_handle = self.db.rocks_db_ref().cf_handle(name).unwrap();
-        let it = self.rss.raw_iterator_cf(&cf_handle);
+impl SafeIteration for SoySsColFam {
+    fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
+        let handle = self.handle();
+        let it = self.rocks_ss_ref().raw_iterator_cf(handle);
         SafeIter::new_unseeked(it)
     }
 }
@@ -191,12 +200,6 @@ where
         let it = RwLock::new(it_unlocked);
         OwnedResourceIter { _res: res, it }
     }
-
-    fn new_cf(res: T, name: &str) -> OwnedResourceIter<T> {
-        let it_unlocked = unsafe { extend_lifetime_safe_iter(res.safe_iter_cf(name)) };
-        let it = RwLock::new(it_unlocked);
-        OwnedResourceIter { _res: res, it }
-    }
 }
 
 impl<T> IterLocker for OwnedResourceIter<T>
@@ -210,9 +213,9 @@ where
 
 pub enum IterResource {
     Ss(OwnedResourceIter<SoySnapshot>),
-    SsCf(OwnedResourceIter<SoySnapshot>),
+    SsCf(OwnedResourceIter<SoySsColFam>),
     Db(OwnedResourceIter<SoyDb>),
-    DbCf(OwnedResourceIter<SoyDb>),
+    DbCf(OwnedResourceIter<SoyDbColFam>),
 }
 
 impl IterResource {
@@ -222,8 +225,8 @@ impl IterResource {
         ResourceArc::new(it)
     }
 
-    pub fn from_db_cf(db: SoyDb, name: &str) -> SoyIter {
-        let res = OwnedResourceIter::new_cf(db, name);
+    pub fn from_db_cf(db_cf: SoyDbColFam) -> SoyIter {
+        let res = OwnedResourceIter::new(db_cf);
         let it = IterResource::DbCf(res);
         ResourceArc::new(it)
     }
@@ -234,8 +237,8 @@ impl IterResource {
         ResourceArc::new(it)
     }
 
-    pub fn from_ss_cf(ss: SoySnapshot, name: &str) -> SoyIter {
-        let res = OwnedResourceIter::new_cf(ss, name);
+    pub fn from_ss_cf(ss_cf: SoySsColFam) -> SoyIter {
+        let res = OwnedResourceIter::new(ss_cf);
         let it = IterResource::SsCf(res);
         ResourceArc::new(it)
     }
