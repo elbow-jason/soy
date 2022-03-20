@@ -35,7 +35,7 @@ defmodule Soy.Iter do
   def new(store)
   def new({DB, db}), do: {Iter, DB, Native.db_iter(db)}
   def new({Snapshot, ss}), do: {Iter, Snapshot, Native.ss_iter(ss)}
-  def new({ColFam, {db, cf}}), do: new({Db, db}, cf)
+  def new({ColFam, {db, cf}}), do: new({DB, db}, cf)
 
   def new(store, cf_name) do
     case store do
@@ -69,14 +69,6 @@ defmodule Soy.Iter do
   def key_value(it), do: Soy.Native.iter_key_value(to_ref(it))
 
   def valid?(it), do: Soy.Native.iter_valid(to_ref(it))
-
-  def set_mode(_it, {:prefix, _}) do
-    raise "Iter.set_mode/2 does not support :prefix mode"
-  end
-
-  def set_mode(_it, {:prefix, _, _}) do
-    raise "Iter.set_mode/2 does not support cf :prefix mode"
-  end
 
   def to_ref({Iter, _, ref}) when is_reference(ref), do: ref
   def to_ref(ref) when is_reference(ref), do: ref

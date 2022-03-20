@@ -23,6 +23,7 @@ defmodule Soy.Native do
 
   # db store
   def put(_db, _key, _val), do: err()
+  def merge(_db, _key, _val), do: err()
   def fetch(_db, _key), do: err()
   def delete(_db, _key), do: err()
 
@@ -51,6 +52,7 @@ defmodule Soy.Native do
 
   # cf store
   def put_cf(_db, _cf_name, _key, _val), do: err()
+  def merge_cf(_db, _cf_name, _key, _val), do: err()
   def fetch_cf(_db, _cf_name, _key), do: err()
   def delete_cf(_db, _cf_name, _key), do: err()
   def multi_get_cf(_db, _cf_and_key_pairs), do: err()

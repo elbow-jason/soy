@@ -51,11 +51,54 @@ defmodule Soy do
     impl.fetch!(store, key)
   end
 
+  @doc """
+  Get the matching value of the given `key` or `default` (default: `nil`).
+
+  ## Examples
+
+      iex> db = Soy.open(tmp_dir())
+      iex> Soy.get(db, "my_key")
+      nil
+
+      iex> db = Soy.open(tmp_dir())
+      iex> Soy.put(db, "my_key", "my_value")
+      iex> Soy.get(db, "my_key")
+      "my_value"
+
+      iex> db = Soy.open(tmp_dir())
+      iex> cf = Soy.ColFam.build(db, "my_cf")
+      iex> :ok = Soy.ColFam.create(cf)
+      iex> Soy.get(cf, "my_key")
+      nil
+
+      iex> db = Soy.open(tmp_dir())
+      iex> cf = Soy.ColFam.build(db, "my_cf")
+      iex> :ok = Soy.ColFam.create(cf)
+      iex> :ok = Soy.put(cf, "my_key", "my_value_in_cf")
+      iex> Soy.get(cf, "my_key")
+      "my_value_in_cf"
+
+  """
   def get({impl, _} = store, key, default \\ nil) do
     impl.get(store, key, default)
   end
 
+  def get_cf({impl, _} = store, col_fam, key, default \\ nil) do
+    case impl.fetch_cf(store, col_fam, key) do
+      {:ok, got} -> got
+      :error -> default
+    end
+  end
+
   def batch({DB, _} = db, ops) do
     DB.batch(db, ops)
+  end
+
+  def snapshot(db), do: DB.snapshot(db)
+
+  if Mix.env() == :dev do
+    def tmp_dir do
+      Briefly.create!(directory: true)
+    end
   end
 end

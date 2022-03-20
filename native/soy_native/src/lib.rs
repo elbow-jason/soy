@@ -1,8 +1,9 @@
-use rocksdb::properties as props;
 use rocksdb::checkpoint::Checkpoint;
-use rocksdb::{Options, Snapshot as RSnapshot, WriteBatch, DB as RocksDb, BoundColumnFamily};
+use rocksdb::properties as props;
+use rocksdb::{BoundColumnFamily, Options, Snapshot as RSnapshot, WriteBatch, DB as RocksDb};
 use rustler::{
-    Atom, Binary, Env, Error as NifError, NifRecord, NifResult, NifUnitEnum, NifUntaggedEnum, ResourceArc, Term,
+    Atom, Binary, Env, Error as NifError, NifRecord, NifResult, NifUnitEnum, NifUntaggedEnum,
+    ResourceArc, Term,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -30,6 +31,8 @@ use live_file::SoyLiveFile;
 
 mod error;
 use error::Error;
+
+pub mod merger;
 
 macro_rules! ok_or_err {
     ($res:expr) => {
@@ -99,7 +102,7 @@ type CfHandle<'a> = Arc<BoundColumnFamily<'a>>;
 fn get_cf_handle<'a>(rdb: &'a RocksDb, name: &str) -> Result<CfHandle<'a>, Error> {
     match rdb.cf_handle(name) {
         Some(cf_handle) => Ok(cf_handle),
-        None => Err(Error::ColumnFamilyDoesNotExist(name.to_string()))
+        None => Err(Error::ColumnFamilyDoesNotExist(name.to_string())),
     }
 }
 
@@ -150,6 +153,17 @@ fn fetch<'a>(db: SoyDb, key: Binary) -> NifResult<(Atom, Bin)> {
 #[rustler::nif]
 fn delete(db: SoyDb, key: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.delete(&key[..]))
+}
+
+#[rustler::nif]
+fn merge(db: SoyDb, key: Binary, val: Binary) -> NifResult<Atom> {
+    ok_or_err!(db.rdb.merge(&key[..], &val[..]))
+}
+
+#[rustler::nif]
+fn merge_cf(db: SoyDb, cf_name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
+    let cf_handle = get_cf_handle(&db.rdb, &cf_name[..]).unwrap();
+    ok_or_err!(db.rdb.merge_cf(&cf_handle, &key[..], &val[..]))
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -248,18 +262,15 @@ fn prop_kv(rdb: &RocksDb, prop: &str) -> (String, Option<Prop>) {
     (prop.to_string(), do_get_property(rdb, prop))
 }
 
-
 fn do_get_property(db: &RocksDb, prop: &str) -> Option<Prop> {
     match db.property_int_value(prop) {
         Ok(Some(int)) => Some(Prop::Int(int)),
         Ok(None) => None,
-        Err(_) => {
-            match db.property_value(prop) {
-                Ok(Some(val)) => Some(Prop::String(val)),
-                Ok(None) => None,
-                Err(e) => panic!("{}", e),
-            }
-        }
+        Err(_) => match db.property_value(prop) {
+            Ok(Some(val)) => Some(Prop::String(val)),
+            Ok(None) => None,
+            Err(e) => panic!("{}", e),
+        },
     }
 }
 
@@ -567,19 +578,17 @@ rustler::init!(
         fetch,
         delete,
         batch,
-
+        merge,
+        merge_cf,
         // flushing/sync
         flush,
         flush_wal,
         flush_cf,
-
         // iter creation
         db_iter,
         db_iter_cf,
         ss_iter,
         ss_iter_cf,
-
-
         multi_get,
         live_files,
         list_cf,
@@ -593,7 +602,6 @@ rustler::init!(
         snapshot,
         ss_fetch,
         ss_fetch_cf,
-        
         ss_multi_get,
         ss_multi_get_cf,
         // write_opts
@@ -609,7 +617,6 @@ rustler::init!(
         iter_seek,
         // iter_seek_for_prev,
         iter_valid,
-
         // props
         get_property,
         list_properties,

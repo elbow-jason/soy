@@ -1,6 +1,8 @@
 use rocksdb::{DBCompactionStyle, Options};
 use rustler::{NifStruct, NifUnitEnum};
 
+use crate::merger;
+
 #[derive(Debug, NifStruct)]
 #[must_use] // Added to test Issue #152
 #[module = "Soy.OpenOpts"]
@@ -20,6 +22,7 @@ pub struct SoyOpenOpts {
     set_level_zero_slowdown_writes_trigger: Option<i32>,
     set_disable_auto_compactions: Option<bool>,
     set_compaction_style: Option<CompactionStyle>,
+    set_merge_operator_associative: Option<(String, merger::MergeOperator)>,
     prefix_length: Option<usize>,
 }
 
@@ -54,6 +57,9 @@ impl From<SoyOpenOpts> for Options {
         if let Some(len) = oc.prefix_length {
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(len);
             opts.set_prefix_extractor(prefix_extractor);
+        }
+        if let Some((name, merge_op)) = oc.set_merge_operator_associative {
+            merge_op.set(&mut opts, &name[..])
         }
         opts
     }

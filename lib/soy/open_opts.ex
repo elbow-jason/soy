@@ -152,5 +152,6 @@ defmodule Soy.OpenOpts do
             set_level_zero_slowdown_writes_trigger: nil,
             set_disable_auto_compactions: true,
             set_compaction_style: :universal,
-            prefix_length: nil
+            prefix_length: nil,
+            set_merge_operator_associative: nil
 end

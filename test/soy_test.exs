@@ -1,6 +1,6 @@
 defmodule SoyTest do
   use ExUnit.Case
-  # import Soy.TestHelpers
+  import Soy.TestHelpers
 
   doctest Soy
 end
