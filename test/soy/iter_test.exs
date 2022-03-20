@@ -1,7 +1,7 @@
 defmodule Soy.IterTest do
   use ExUnit.Case
   import Soy.TestHelpers
-  alias Soy.{Iter, DBCol, Snapshot}
+  alias Soy.{Iter, DBCol}
   doctest Soy.Iter
 
   setup do
@@ -11,12 +11,11 @@ defmodule Soy.IterTest do
     :ok = Soy.put(db, "k3", "v3")
     :ok = Soy.put(db, "k2", "v2")
     :ok = Soy.put(db, "z", "1000")
-    cf = DBCol.build(db, "things")
-    :ok = DBCol.create_new(cf)
+    {:ok, cf} = DBCol.create_new(db, "things")
     :ok = DBCol.put(cf, "tk2", "tv2")
     :ok = DBCol.put(cf, "tk1", "tv1")
     :ok = DBCol.put(cf, "tk3", "tv3")
-    {:ok, %{db: db}}
+    {:ok, %{db: db, cf: cf}}
   end
 
   describe "next/1" do
@@ -185,32 +184,32 @@ defmodule Soy.IterTest do
       assert Iter.valid?(it) == false
       assert Iter.value(it) == nil
     end
-  end
 
-  describe "new/2" do
-    test "returns a cf iter for a db", %{db: db} do
-      it = Iter.new(db, "things")
+    test "returns a db cf iter for a DBCol", %{cf: cf} do
+      it = Iter.new(cf)
       assert Iter.valid?(it) == true
       assert Iter.next(it) == {"tk1", "tv1"}
       assert Iter.next(it) == {"tk2", "tv2"}
       assert Iter.next(it) == {"tk3", "tv3"}
       assert Iter.next(it) == nil
     end
-
-    test "returns a cf iter for a snapshot", %{db: db} do
-      ss = Snapshot.new(db)
-      it = Iter.new(ss, "things")
-      cf = DBCol.build(db, "things")
-      :ok = Soy.put(cf, "beep", "boop")
-      assert Iter.valid?(it) == true
-      assert Iter.next(it) == {"tk1", "tv1"}
-      assert Iter.next(it) == {"tk2", "tv2"}
-      assert Iter.next(it) == {"tk3", "tv3"}
-      assert Iter.next(it) == nil
-      cf = DBCol.build(db, "things")
-      :ok = Soy.put(cf, "beep", "boop")
-    end
   end
+
+  # describe "new/" do
+  # test "returns a cf iter for a snapshot", %{db: db} do
+  #   ss = Snapshot.new(db)
+  #   it = Iter.new(ss, "things")
+  #   cf = DBCol.build(db, "things")
+  #   :ok = Soy.put(cf, "beep", "boop")
+  #   assert Iter.valid?(it) == true
+  #   assert Iter.next(it) == {"tk1", "tv1"}
+  #   assert Iter.next(it) == {"tk2", "tv2"}
+  #   assert Iter.next(it) == {"tk3", "tv3"}
+  #   assert Iter.next(it) == nil
+  #   cf = DBCol.build(db, "things")
+  #   :ok = Soy.put(cf, "beep", "boop")
+  # end
+  # end
 
   # describe "prefix/2" do
   #   @tag :skip

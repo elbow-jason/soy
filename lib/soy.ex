@@ -22,8 +22,7 @@ defmodule Soy do
 
       iex> path = tmp_dir()
       iex> db = Soy.open(path)
-      iex> cf = DBCol.build(db, "fam")
-      iex> :ok = DBCol.create_new(cf)
+      iex> {:ok, _cf} = DBCol.create_new(db, "fam")
       iex> Soy.list_columns(db)
       ["default", "fam"]
       iex> Soy.list_columns(path)
@@ -83,14 +82,12 @@ defmodule Soy do
       "my_value"
 
       iex> db = Soy.open(tmp_dir())
-      iex> cf = Soy.DBCol.build(db, "my_cf")
-      iex> :ok = Soy.DBCol.create_new(cf)
+      iex> {:ok, cf} = Soy.DBCol.create_new(db, "my_cf")
       iex> Soy.get(cf, "my_key")
       nil
 
       iex> db = Soy.open(tmp_dir())
-      iex> cf = Soy.DBCol.build(db, "my_cf")
-      iex> :ok = Soy.DBCol.create_new(cf)
+      iex> {:ok, cf} = Soy.DBCol.create_new(db, "my_cf")
       iex> :ok = Soy.put(cf, "my_key", "my_value_in_cf")
       iex> Soy.get(cf, "my_key")
       "my_value_in_cf"

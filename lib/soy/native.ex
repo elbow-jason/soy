@@ -14,7 +14,6 @@ defmodule Soy.Native do
   # flush/sync to disk
   def db_flush(_db), do: err()
   def db_flush_wal(_db, _sync), do: err()
-  def db_flush_cf(_db, _name), do: err()
 
   # metadata
   def db_path(_db), do: err()
@@ -22,30 +21,27 @@ defmodule Soy.Native do
 
   # db reads
   def db_fetch(_db, _key), do: err()
-  def db_fetch_cf(_db, _cf, _key), do: err()
+
   def db_multi_get(_db, _keys), do: err()
   def db_multi_get_cf(_db, _cf_and_key_pairs), do: err()
   def db_key_may_exist(_db, _key), do: err()
-  def db_key_may_exist_cf(_db, _cf, _key), do: err()
-  def db_key_exists(_db, _key), do: err()
-  def db_key_exists_cf(_db, _cf, _key), do: err()
+
+  def db_has_key(_db, _key), do: err()
 
   # db mutations
   def db_merge(_db, _key, _val), do: err()
-  def db_merge_cf(_db, _cf, _key, _val), do: err()
   def db_delete(_db, _key), do: err()
-  def db_delete_cf(_db, _cf, _key), do: err()
   def db_put(_db, _key, _val), do: err()
-  def db_put_cf(_db, _cf, _key, _val), do: err()
   def db_batch(_db, _ops_list), do: err()
 
   # cf create/drop
-  def db_create_cf(_db, _cf, _open_cfg), do: err()
+  def db_create_new_cf(_db, _col_name, _open_cfg), do: err()
+  def db_open_existing_cf(_db, _col_name), do: err()
   def db_drop_cf(_db, _cf), do: err()
 
   # iteration for both db and cf based on itermode
   def db_iter(_db), do: err()
-  def db_iter_cf(_db, _name), do: err()
+
   def ss_iter(_ss), do: err()
   def ss_iter_cf(_ss, _name), do: err()
 
@@ -73,4 +69,16 @@ defmodule Soy.Native do
   # properties
   def db_get_property(_db, _prop), do: err()
   def db_list_properties(_db), do: err()
+
+  def db_cf_delete(_cf, _key), do: err()
+  def db_cf_put(_cf, _key, _value), do: err()
+  def db_cf_fetch(_cf, _key), do: err()
+  def db_cf_merge(_cf, _key, _val), do: err()
+  def db_cf_key_may_exist(_cf, _key), do: err()
+  def db_cf_has_key(_cf, _key), do: err()
+  def db_cf_name(_cf), do: err()
+  def db_cf_to_db(_cf), do: err()
+  def db_cf_iter(_cf), do: err()
+  def db_cf_flush(_cf), do: err()
+  def db_cf_multi_get(_cf_key_pairs), do: err()
 end

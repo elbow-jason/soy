@@ -1,6 +1,6 @@
 use rustler::{Binary, Decoder, Encoder, Env, Error as NifError, NifResult, OwnedBinary, Term};
-use std::str;
 use std::ops::Deref;
+use std::str;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bin(Vec<u8>);

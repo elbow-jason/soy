@@ -154,4 +154,12 @@ defmodule Soy.OpenOpts do
             set_compaction_style: :universal,
             prefix_length: nil,
             set_merge_operator_associative: nil
+
+  def new(opts) when is_list(opts) do
+    struct!(__MODULE__, opts)
+  end
+
+  def new(%__MODULE__{} = open_opts) do
+    open_opts
+  end
 end

@@ -50,8 +50,7 @@ defmodule Soy.DB do
 
       iex> path = tmp_dir()
       iex> db = Soy.open(path)
-      iex> cf = DBCol.build(db, "fam")
-      iex> :ok = DBCol.create_new(cf)
+      iex> {:ok, _cf} = Soy.DBCol.create_new(db, "fam")
       iex> Soy.list_columns(db)
       ["default", "fam"]
       iex> Soy.list_columns(path)
@@ -66,16 +65,8 @@ defmodule Soy.DB do
   Creates a column family in the db.
   """
 
-  def create_cf(db, name, opts \\ [])
-
-  def create_cf(db, name, opts) when is_list(opts) do
-    create_cf(db, name, struct!(OpenOpts, opts))
-  end
-
-  def create_cf(db, name, %OpenOpts{} = open_config) do
-    ref = DB.to_ref(db)
-    :ok = Native.db_create_cf(ref, name, open_config)
-    DBCol.build(ref, name)
+  def create_new_cf(db, name, opts \\ []) do
+    DBCol.create_new(db, name, opts)
   end
 
   @doc """
@@ -171,7 +162,7 @@ defmodule Soy.DB do
 
   """
   def has_key?(db, key) do
-    Native.db_key_exists(to_ref(db), key)
+    Native.db_has_key(to_ref(db), key)
   end
 
   @doc """
@@ -291,9 +282,8 @@ defmodule Soy.DB do
   ## Examples
 
     iex> db = Soy.open(tmp_dir())
-    iex> cf = DBCol.build(db, "ages")
-    iex> :ok = DBCol.create_new(cf)
-    iex> ops = [{:put, "name", "bill"}, {:put_cf, "ages", "bill", "28"}]
+    iex> {:ok, cf} = DBCol.create_new(db, "ages")
+    iex> ops = [{:put, "name", "bill"}, {:put_cf, Soy.DBCol.to_ref(cf), "bill", "28"}]
     iex> 2 = Soy.batch(db, ops)
     iex> Soy.get(db, "name")
     "bill"

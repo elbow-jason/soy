@@ -1,4 +1,4 @@
-use crate::Bin;
+use crate::{Bin, SoyDbColFam};
 use rustler::{NifRecord, NifUntaggedEnum};
 
 #[derive(NifRecord)]
@@ -17,11 +17,11 @@ impl PutOp {
 
 #[derive(NifRecord)]
 #[tag = "put_cf"]
-pub struct PutCfOp(String, Bin, Bin);
+pub struct PutCfOp(SoyDbColFam, Bin, Bin);
 
 impl PutCfOp {
     pub fn name(&self) -> &str {
-        self.0.as_str()
+        self.0.name()
     }
 
     pub fn key(&self) -> &[u8] {

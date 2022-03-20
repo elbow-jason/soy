@@ -8,21 +8,22 @@ defmodule Soy.DBCol do
   @doc """
   Creates a column family for with `name` and `opts` in the `db`
   """
-  def create_new(cf, opts \\ [])
+  def create_new(db, name, opts \\ []) do
+    open_opts = OpenOpts.new(opts)
+    db_ref = DB.to_ref(db)
 
-  def create_new(cf, opts) when is_list(opts) do
-    create_new(cf, struct!(OpenOpts, opts))
-  end
-
-  def create_new({DBCol, {db, name}}, %OpenOpts{} = open_config) do
-    Native.db_create_cf(DB.to_ref(db), name, open_config)
+    case Native.db_create_new_cf(db_ref, name, open_opts) do
+      cf_ref when is_reference(cf_ref) -> {:ok, {DBCol, cf_ref}}
+      {:error, _} = err -> err
+    end
   end
 
   @doc """
   Builds a tuple with the `db` and `name`.
   """
-  def build(db, name) do
-    {DBCol, {DB.to_ref(db), name}}
+  def open(db, name) do
+    db_ref = DB.to_ref(db)
+    Native.db_open_existing_cf(db_ref, name)
   end
 
   @doc """
@@ -31,15 +32,15 @@ defmodule Soy.DBCol do
   def name({DBCol, {_, name}}), do: name
   def name(name) when is_binary(name), do: name
 
-  @doc """
-  The db of the column family.
-  """
-  def db({DBCol, {db_ref, _name}}), do: {DB, db_ref}
+  # @doc """
+  # The db of the column family.
+  # """
+  # def db({DBCol, {db_ref, _name}}), do: {DB, db_ref}
 
   @doc """
-  The db ref of the column family.
+  The ref of the db column family.
   """
-  def to_ref({DBCol, {db, _name}}), do: db
+  def to_ref({DBCol, ref}), do: ref
 
   @doc """
   Drops a column family with `name` from the `db`.
@@ -54,7 +55,7 @@ defmodule Soy.DBCol do
   Puts an kv-entry in the `db` at the column family with `name`.
   """
   def put(cf, key, val) do
-    Native.db_put_cf(to_ref(cf), name(cf), key, val)
+    Native.db_cf_put(to_ref(cf), key, val)
   end
 
   @doc """
@@ -62,7 +63,7 @@ defmodule Soy.DBCol do
   with `name`.
   """
   def fetch(cf, key) do
-    Native.db_fetch_cf(to_ref(cf), name(cf), key)
+    Native.db_cf_fetch(to_ref(cf), key)
   end
 
   @doc """
@@ -80,7 +81,7 @@ defmodule Soy.DBCol do
   Returns `true` or `false` based on the existence of a `key` in the `col`.
   """
   def has_key?(col, key) do
-    Native.db_key_exists_cf(to_ref(col), name(col), key)
+    Native.db_cf_has_key(to_ref(col), key)
   end
 
   @doc """
@@ -88,15 +89,27 @@ defmodule Soy.DBCol do
   with `name`.
   """
   def delete(cf, key) do
-    Native.db_delete_cf(to_ref(cf), name(cf), key)
+    Native.db_cf_delete(to_ref(cf), key)
   end
 
   @doc """
   Gets binary value or nil for a list of {cf, key} pairs.
   """
   def multi_get(cf, keys) do
-    cf_name = name(cf)
-    pairs = Enum.map(keys, fn k -> {cf_name, k} end)
-    Native.db_multi_get_cf(to_ref(cf), pairs)
+    ref = to_ref(cf)
+    pairs = Enum.map(keys, fn k -> {ref, k} end)
+    Native.db_cf_multi_get(pairs)
+  end
+
+  @doc """
+  Gets binary value or nil for a list of {cf, key} pairs.
+  """
+  def multi_get(pairs) do
+    pairs
+    |> Enum.map(fn
+      {{DBCol, ref}, key} -> {ref, key}
+      {ref, key} when is_reference(ref) -> {ref, key}
+    end)
+    |> Native.db_cf_multi_get()
   end
 end
