@@ -83,7 +83,7 @@ impl SnapshotResource {
 type SoySnapshot = ResourceArc<SnapshotResource>;
 
 #[rustler::nif]
-fn open(path: BinStr, open_opts: SoyOpenOpts) -> SoyDb {
+fn path_open_db(path: BinStr, open_opts: SoyOpenOpts) -> SoyDb {
     let opts = open_opts.into();
     match RocksDb::list_cf(&opts, &path[..]) {
         Ok(cfs) => {
@@ -106,13 +106,13 @@ fn get_cf_handle<'a>(rdb: &'a RocksDb, name: &str) -> Result<CfHandle<'a>, Error
     }
 }
 
-#[rustler::nif(name = "path")]
+#[rustler::nif]
 fn db_path(env: Env, db: SoyDb) -> Binary {
     new_binary(db.rdb.path().to_str().unwrap().as_bytes(), env)
 }
 
 #[rustler::nif]
-fn checkpoint(db: SoyDb, checkpoint_path: BinStr) -> Atom {
+fn db_checkpoint(db: SoyDb, checkpoint_path: BinStr) -> Atom {
     let cp_path = Path::new(&checkpoint_path[..]);
     if db.rdb.path() == cp_path {
         panic!(
@@ -127,22 +127,22 @@ fn checkpoint(db: SoyDb, checkpoint_path: BinStr) -> Atom {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn destroy(path: BinStr) -> NifResult<Atom> {
+fn path_destroy(path: BinStr) -> NifResult<Atom> {
     ok_or_err!(RocksDb::destroy(&Options::default(), &path[..]))
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn repair(path: BinStr) -> NifResult<Atom> {
+fn path_repair(path: BinStr) -> NifResult<Atom> {
     ok_or_err!(rocksdb::DB::repair(&Options::default(), &path[..]))
 }
 
 #[rustler::nif]
-fn put(db: SoyDb, key: Binary, val: Binary) -> NifResult<Atom> {
+fn db_put(db: SoyDb, key: Binary, val: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.put(&key[..], &val[..]))
 }
 
 #[rustler::nif]
-fn fetch<'a>(db: SoyDb, key: Binary) -> NifResult<(Atom, Bin)> {
+fn db_fetch<'a>(db: SoyDb, key: Binary) -> NifResult<(Atom, Bin)> {
     match db.rdb.get(&key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
         Ok(None) => Err(NifError::Atom("error")),
@@ -151,44 +151,47 @@ fn fetch<'a>(db: SoyDb, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn delete(db: SoyDb, key: Binary) -> NifResult<Atom> {
+fn db_delete(db: SoyDb, key: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.delete(&key[..]))
 }
 
 #[rustler::nif]
-fn merge(db: SoyDb, key: Binary, val: Binary) -> NifResult<Atom> {
+fn db_merge(db: SoyDb, key: Binary, val: Binary) -> NifResult<Atom> {
     ok_or_err!(db.rdb.merge(&key[..], &val[..]))
 }
 
 #[rustler::nif]
-fn merge_cf(db: SoyDb, cf_name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
+fn db_merge_cf(db: SoyDb, cf_name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
     let cf_handle = get_cf_handle(&db.rdb, &cf_name[..]).unwrap();
     ok_or_err!(db.rdb.merge_cf(&cf_handle, &key[..], &val[..]))
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn flush(db: SoyDb) -> NifResult<Atom> {
+fn db_flush(db: SoyDb) -> NifResult<Atom> {
     ok_or_err!(db.rdb.flush())
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn flush_cf(db: SoyDb, name: BinStr) -> NifResult<Atom> {
+fn db_flush_cf(db: SoyDb, name: BinStr) -> NifResult<Atom> {
     let cf_handle = get_cf_handle(&db.rdb, &name).unwrap();
     ok_or_err!(db.rdb.flush_cf(&cf_handle))
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn flush_wal(db: SoyDb, sync: bool) -> NifResult<Atom> {
+fn db_flush_wal(db: SoyDb, sync: bool) -> NifResult<Atom> {
     ok_or_err!(db.rdb.flush_wal(sync))
 }
 
 #[rustler::nif]
-fn latest_sequence_number(db: SoyDb) -> u64 {
+fn db_latest_sequence_number(db: SoyDb) -> u64 {
     db.rdb.latest_sequence_number()
 }
 
 #[rustler::nif]
-fn get_updates_since(db: SoyDb, sequence_number: u64) -> Result<ResourceArc<WalIterator>, Error> {
+fn db_get_updates_since(
+    db: SoyDb,
+    sequence_number: u64,
+) -> Result<ResourceArc<WalIterator>, Error> {
     let it = WalIterator::new(db, sequence_number)?;
     Ok(ResourceArc::new(it))
 }
@@ -200,12 +203,12 @@ pub enum Prop {
 }
 
 #[rustler::nif]
-fn get_property(db: SoyDb, prop: &str) -> Option<Prop> {
+fn db_get_property(db: SoyDb, prop: &str) -> Option<Prop> {
     do_get_property(&db.rdb, prop)
 }
 
 #[rustler::nif]
-fn list_properties(db: SoyDb) -> Vec<(String, Option<Prop>)> {
+fn db_list_properties(db: SoyDb) -> Vec<(String, Option<Prop>)> {
     let rdb = &db.rdb;
     vec![
         prop_kv(rdb, props::ACTUAL_DELAYED_WRITE_RATE),
@@ -280,7 +283,7 @@ fn wal_iter_next(w: ResourceArc<WalIterator>) -> Option<(u64, Vec<WalRow>)> {
 }
 
 #[rustler::nif]
-fn multi_get<'a>(db: SoyDb, keys: Vec<Binary>) -> Vec<Option<Bin>> {
+fn db_multi_get<'a>(db: SoyDb, keys: Vec<Binary>) -> Vec<Option<Bin>> {
     let keys_it = keys.iter().map(|k| (&k[..]).to_vec());
     db.rdb
         .multi_get(keys_it)
@@ -293,7 +296,7 @@ fn multi_get<'a>(db: SoyDb, keys: Vec<Binary>) -> Vec<Option<Bin>> {
 }
 
 #[rustler::nif]
-fn multi_get_cf<'a>(db: SoyDb, cf_and_keys: Vec<(BinStr, Binary)>) -> Vec<Option<Bin>> {
+fn db_multi_get_cf<'a>(db: SoyDb, cf_and_keys: Vec<(BinStr, Binary)>) -> Vec<Option<Bin>> {
     let rdb = &db.rdb;
     let cf_handle_keys: Vec<(Arc<rocksdb::BoundColumnFamily<'_>>, Binary)> = cf_and_keys
         .into_iter()
@@ -314,7 +317,7 @@ fn multi_get_cf<'a>(db: SoyDb, cf_and_keys: Vec<(BinStr, Binary)>) -> Vec<Option
 }
 
 #[rustler::nif]
-fn live_files(db: SoyDb) -> Vec<SoyLiveFile> {
+fn db_live_files(db: SoyDb) -> Vec<SoyLiveFile> {
     db.rdb
         .live_files()
         .unwrap()
@@ -324,7 +327,7 @@ fn live_files(db: SoyDb) -> Vec<SoyLiveFile> {
 }
 
 #[rustler::nif]
-fn batch<'a>(db: SoyDb, ops: Vec<BatchOp>) -> NifResult<usize> {
+fn db_batch<'a>(db: SoyDb, ops: Vec<BatchOp>) -> NifResult<usize> {
     if ops.len() == 0 {
         return Ok(0);
     }
@@ -438,7 +441,7 @@ fn do_iter_key_value<'a>(env: Env<'a>, it: &SafeIter<'a>) -> Option<(Binary<'a>,
 }
 
 #[rustler::nif]
-fn snapshot(db: SoyDb) -> SoySnapshot {
+fn db_snapshot(db: SoyDb) -> SoySnapshot {
     SnapshotResource::new(db)
 }
 
@@ -467,29 +470,29 @@ fn iter_valid<'a>(soy_iter: SoyIter) -> bool {
 }
 
 #[rustler::nif]
-fn create_cf(db: SoyDb, name: BinStr, open_opts: SoyOpenOpts) -> NifResult<Atom> {
+fn db_create_cf(db: SoyDb, name: BinStr, open_opts: SoyOpenOpts) -> NifResult<Atom> {
     let opts = open_opts.into();
     ok_or_err!(db.rdb.create_cf(&name[..], &opts))
 }
 
 #[rustler::nif]
-fn list_cf(path: BinStr) -> Vec<String> {
+fn path_list_cf(path: BinStr) -> Vec<String> {
     RocksDb::list_cf(&Options::default(), &path[..]).unwrap()
 }
 
 #[rustler::nif]
-fn drop_cf(db: SoyDb, name: BinStr) -> NifResult<Atom> {
+fn db_drop_cf(db: SoyDb, name: BinStr) -> NifResult<Atom> {
     ok_or_err!(db.rdb.drop_cf(&name[..]))
 }
 
 #[rustler::nif]
-fn put_cf(db: SoyDb, name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
+fn db_put_cf(db: SoyDb, name: BinStr, key: Binary, val: Binary) -> NifResult<Atom> {
     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
     ok_or_err!(db.rdb.put_cf(&cf_handler, &key[..], &val[..]))
 }
 
 #[rustler::nif]
-fn fetch_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<(Atom, Bin)> {
+fn db_fetch_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<(Atom, Bin)> {
     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
     match db.rdb.get_cf(&cf_handler, &key[..]) {
         Ok(Some(v)) => Ok((atoms::ok(), Bin::from_vec(v))),
@@ -499,9 +502,47 @@ fn fetch_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<(Atom, Bin)> {
 }
 
 #[rustler::nif]
-fn delete_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<Atom> {
+fn db_delete_cf(db: SoyDb, name: BinStr, key: Binary) -> NifResult<Atom> {
     let cf_handler = get_cf_handle(&db.rdb, &name).unwrap();
     ok_or_err!(db.rdb.delete_cf(&cf_handler, &key[..]))
+}
+
+#[rustler::nif]
+fn db_key_may_exist(db: SoyDb, key: Binary) -> bool {
+    db.rdb.key_may_exist(&key[..])
+}
+
+#[rustler::nif]
+fn db_key_may_exist_cf(db: SoyDb, cf: BinStr, key: Binary) -> bool {
+    let cf_handle = get_cf_handle(&db.rdb, &cf[..]).unwrap();
+    db.rdb.key_may_exist_cf(&cf_handle, &key[..])
+}
+
+#[rustler::nif]
+fn db_key_exists(db: SoyDb, key: Binary) -> bool {
+    let may_exist = db.rdb.key_may_exist(&key[..]);
+    if !may_exist {
+        return false;
+    }
+    match db.rdb.get(&key[..]) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => panic!("{}", e),
+    }
+}
+
+#[rustler::nif]
+fn db_key_exists_cf(db: SoyDb, cf: BinStr, key: Binary) -> bool {
+    let cf_handle = get_cf_handle(&db.rdb, &cf[..]).unwrap();
+    let may_exist = db.rdb.key_may_exist_cf(&cf_handle, &key[..]);
+    if !may_exist {
+        return false;
+    }
+    match db.rdb.get(&key[..]) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => panic!("{}", e),
+    }
 }
 
 #[rustler::nif]
@@ -569,37 +610,53 @@ fn load(env: Env, _: Term) -> bool {
 rustler::init!(
     "Elixir.Soy.Native",
     [
-        open,
-        destroy,
-        repair,
-        checkpoint,
+        // path ops
+        path_destroy,
+        path_repair,
+        path_list_cf,
+        path_open_db,
+        // db ops
+        // backups
+        db_checkpoint,
         db_path,
-        put,
-        fetch,
-        delete,
-        batch,
-        merge,
-        merge_cf,
+        // write ops
+        db_put,
+        db_delete,
+        db_batch,
+        db_merge,
+        // write cf ops
+        db_delete_cf,
+        db_merge_cf,
+        db_drop_cf,
+        db_put_cf,
+        db_create_cf,
+        // read ops
+        db_fetch,
+        db_multi_get,
+        db_key_may_exist,
+        db_key_may_exist_cf,
+        db_key_exists,
+        db_key_exists_cf,
+        // read cf ops
+        db_fetch_cf,
+        db_multi_get_cf,
         // flushing/sync
-        flush,
-        flush_wal,
-        flush_cf,
+        db_flush,
+        db_flush_wal,
+        db_flush_cf,
         // iter creation
         db_iter,
         db_iter_cf,
+        // snaphot creation
+        db_snapshot,
+        // db props/metadata/introspection
+        db_get_property,
+        db_list_properties,
+        db_live_files,
+        // snapshot ops
         ss_iter,
         ss_iter_cf,
-        multi_get,
-        live_files,
-        list_cf,
-        drop_cf,
-        put_cf,
-        fetch_cf,
-        delete_cf,
-        create_cf,
-        multi_get_cf,
         // snapshot funcs
-        snapshot,
         ss_fetch,
         ss_fetch_cf,
         ss_multi_get,
@@ -612,14 +669,8 @@ rustler::init!(
         iter_key,
         iter_value,
         iter_key_value,
-        // iter_next,
-        // iter_prev,
         iter_seek,
-        // iter_seek_for_prev,
         iter_valid,
-        // props
-        get_property,
-        list_properties,
     ],
     load = load
 );

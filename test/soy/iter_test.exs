@@ -1,7 +1,7 @@
 defmodule Soy.IterTest do
   use ExUnit.Case
   import Soy.TestHelpers
-  alias Soy.{Iter, ColFam, Snapshot}
+  alias Soy.{Iter, DBCol, Snapshot}
   doctest Soy.Iter
 
   setup do
@@ -11,11 +11,11 @@ defmodule Soy.IterTest do
     :ok = Soy.put(db, "k3", "v3")
     :ok = Soy.put(db, "k2", "v2")
     :ok = Soy.put(db, "z", "1000")
-    cf = ColFam.build(db, "things")
-    :ok = ColFam.create(cf)
-    :ok = ColFam.put(cf, "tk2", "tv2")
-    :ok = ColFam.put(cf, "tk1", "tv1")
-    :ok = ColFam.put(cf, "tk3", "tv3")
+    cf = DBCol.build(db, "things")
+    :ok = DBCol.create_new(cf)
+    :ok = DBCol.put(cf, "tk2", "tv2")
+    :ok = DBCol.put(cf, "tk1", "tv1")
+    :ok = DBCol.put(cf, "tk3", "tv3")
     {:ok, %{db: db}}
   end
 
@@ -200,14 +200,14 @@ defmodule Soy.IterTest do
     test "returns a cf iter for a snapshot", %{db: db} do
       ss = Snapshot.new(db)
       it = Iter.new(ss, "things")
-      cf = ColFam.build(db, "things")
+      cf = DBCol.build(db, "things")
       :ok = Soy.put(cf, "beep", "boop")
       assert Iter.valid?(it) == true
       assert Iter.next(it) == {"tk1", "tv1"}
       assert Iter.next(it) == {"tk2", "tv2"}
       assert Iter.next(it) == {"tk3", "tv3"}
       assert Iter.next(it) == nil
-      cf = ColFam.build(db, "things")
+      cf = DBCol.build(db, "things")
       :ok = Soy.put(cf, "beep", "boop")
     end
   end
@@ -261,12 +261,12 @@ defmodule Soy.IterTest do
   #   test "used with Iter.valid?/2 can be used to probe for presence of keys in the column family" do
   #     my_name = "jason"
   #     db = Soy.open(tmp_dir(), prefix_length: 3)
-  #     cf = ColFam.build(db, "items")
-  #     :ok = ColFam.create(cf, prefix_length: 3)
+  #     cf = DBCol.build(db, "items")
+  #     :ok = DBCol.create_new(cf, prefix_length: 3)
   #     my_prefix = "jas"
   #     invalid_it_because_no_jasons = Iter.prefix(cf, my_prefix)
   #     assert Iter.valid?(invalid_it_because_no_jasons) == false
-  #     :ok = ColFam.put(cf, my_name, "yep")
+  #     :ok = DBCol.put(cf, my_name, "yep")
   #     it = Iter.prefix(cf, my_prefix)
   #     assert Iter.valid?(it) == true
   #   end

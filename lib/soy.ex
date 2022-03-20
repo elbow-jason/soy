@@ -15,12 +15,26 @@ defmodule Soy do
 
   def path({DB, _} = db), do: DB.path(db)
 
-  def list_cf(path) when is_binary(path) do
-    Native.list_cf(path)
+  @doc """
+  List the columns of a db given a DB or a path.
+
+  ## Examples
+
+      iex> path = tmp_dir()
+      iex> db = Soy.open(path)
+      iex> cf = DBCol.build(db, "fam")
+      iex> :ok = DBCol.create_new(cf)
+      iex> Soy.list_columns(db)
+      ["default", "fam"]
+      iex> Soy.list_columns(path)
+      ["default", "fam"]
+  """
+  def list_columns(path) when is_binary(path) do
+    Native.path_list_cf(path)
   end
 
-  def list_cf({DB, _} = db) do
-    DB.list_cf(db)
+  def list_columns({DB, _} = db) do
+    DB.list_columns(db)
   end
 
   def destroy(path) do
@@ -48,7 +62,10 @@ defmodule Soy do
   end
 
   def fetch!({impl, _} = store, key) do
-    impl.fetch!(store, key)
+    case impl.fetch(store, key) do
+      {:ok, val} -> val
+      :error -> raise KeyError, key: key, term: store
+    end
   end
 
   @doc """
@@ -66,14 +83,14 @@ defmodule Soy do
       "my_value"
 
       iex> db = Soy.open(tmp_dir())
-      iex> cf = Soy.ColFam.build(db, "my_cf")
-      iex> :ok = Soy.ColFam.create(cf)
+      iex> cf = Soy.DBCol.build(db, "my_cf")
+      iex> :ok = Soy.DBCol.create_new(cf)
       iex> Soy.get(cf, "my_key")
       nil
 
       iex> db = Soy.open(tmp_dir())
-      iex> cf = Soy.ColFam.build(db, "my_cf")
-      iex> :ok = Soy.ColFam.create(cf)
+      iex> cf = Soy.DBCol.build(db, "my_cf")
+      iex> :ok = Soy.DBCol.create_new(cf)
       iex> :ok = Soy.put(cf, "my_key", "my_value_in_cf")
       iex> Soy.get(cf, "my_key")
       "my_value_in_cf"

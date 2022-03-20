@@ -1,5 +1,5 @@
 defmodule Soy.Iter do
-  alias Soy.{ColFam, DB, Iter, Native, Snapshot}
+  alias Soy.{DBCol, DB, Iter, Native, Snapshot}
 
   @doc """
   Gets a key-ordered-iterator for the db.
@@ -35,18 +35,18 @@ defmodule Soy.Iter do
   def new(store)
   def new({DB, db}), do: {Iter, DB, Native.db_iter(db)}
   def new({Snapshot, ss}), do: {Iter, Snapshot, Native.ss_iter(ss)}
-  def new({ColFam, {db, cf}}), do: new({DB, db}, cf)
+  def new({DBCol, {db, cf}}), do: new({DB, db}, cf)
 
   def new(store, cf_name) do
     case store do
-      {DB, db} -> {Iter, {ColFam, cf_name}, Native.db_iter_cf(db, cf_name)}
-      {Snapshot, ss} -> {Iter, {ColFam, cf_name}, Native.ss_iter_cf(ss, cf_name)}
+      {DB, db} -> {Iter, {DBCol, cf_name}, Native.db_iter_cf(db, cf_name)}
+      {Snapshot, ss} -> {Iter, {DBCol, cf_name}, Native.ss_iter_cf(ss, cf_name)}
     end
   end
 
   # def prefix({DB, db}, prefix), do: new(db, {:prefix, prefix})
 
-  # def prefix({ColFam, {db, name}}, prefix), do: new(db, {:prefix, name, prefix})
+  # def prefix({DBCol, {db, name}}, prefix), do: new(db, {:prefix, name, prefix})
 
   def seek(it, kind), do: Soy.Native.iter_seek(to_ref(it), kind)
 

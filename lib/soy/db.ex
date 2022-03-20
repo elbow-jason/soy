@@ -1,5 +1,5 @@
 defmodule Soy.DB do
-  alias Soy.{DB, Native, OpenOpts, Snapshot, ColFam}
+  alias Soy.{DB, Native, OpenOpts, Snapshot, DBCol}
 
   @doc """
   Opens a db at the given path with the given options list or
@@ -29,7 +29,7 @@ defmodule Soy.DB do
   end
 
   def open(path, %OpenOpts{} = open_config) do
-    {DB, Native.open(path, open_config)}
+    {DB, Native.path_open_db(path, open_config)}
   end
 
   @doc """
@@ -45,30 +45,21 @@ defmodule Soy.DB do
 
       iex> path = tmp_dir()
       iex> db = Soy.open(path)
-      iex> Soy.list_cf(db)
-      ["default"]
-
-      iex> path = tmp_dir()
-      iex> _db = Soy.open(path)
-      iex> Soy.list_cf(path)
+      iex> Soy.list_columns(db)
       ["default"]
 
       iex> path = tmp_dir()
       iex> db = Soy.open(path)
-      iex> cf = ColFam.build(db, "fam")
-      iex> :ok = ColFam.create(cf)
-      iex> Soy.list_cf(db)
+      iex> cf = DBCol.build(db, "fam")
+      iex> :ok = DBCol.create_new(cf)
+      iex> Soy.list_columns(db)
       ["default", "fam"]
-      iex> Soy.list_cf(path)
+      iex> Soy.list_columns(path)
       ["default", "fam"]
 
   """
-  def list_cf(path) when is_binary(path) do
-    Native.list_cf(path)
-  end
-
-  def list_cf(db) do
-    Native.list_cf(DB.path(db))
+  def list_columns(db) do
+    Native.path_list_cf(DB.path(db))
   end
 
   @doc """
@@ -83,8 +74,8 @@ defmodule Soy.DB do
 
   def create_cf(db, name, %OpenOpts{} = open_config) do
     ref = DB.to_ref(db)
-    :ok = Native.create_cf(ref, name, open_config)
-    ColFam.build(ref, name)
+    :ok = Native.db_create_cf(ref, name, open_config)
+    DBCol.build(ref, name)
   end
 
   @doc """
@@ -106,7 +97,7 @@ defmodule Soy.DB do
 
   """
   def destroy(path) do
-    Native.destroy(path)
+    Native.path_destroy(path)
   end
 
   @doc """
@@ -123,7 +114,7 @@ defmodule Soy.DB do
 
   """
   def repair(path) do
-    Native.repair(path)
+    Native.path_repair(path)
   end
 
   @doc """
@@ -138,7 +129,7 @@ defmodule Soy.DB do
 
   """
   def path(db) do
-    Native.path(to_ref(db))
+    Native.db_path(to_ref(db))
   end
 
   @doc """
@@ -149,7 +140,7 @@ defmodule Soy.DB do
   then the active SST files will be listed.
   """
   def live_files(db) do
-    Native.live_files(to_ref(db))
+    Native.db_live_files(to_ref(db))
   end
 
   @doc """
@@ -163,7 +154,24 @@ defmodule Soy.DB do
     iex> "world" = Soy.get(db, "hello")
   """
   def put(db, key, val) do
-    Native.put(to_ref(db), key, val)
+    Native.db_put(to_ref(db), key, val)
+  end
+
+  @doc """
+  Returns `true` or `false` based on the existence of a `key` in the `db`.
+
+  ## Examples
+
+      iex> db = Soy.open(tmp_dir())
+      iex> :ok = Soy.put(db, "hello", "world")
+      iex> DB.has_key?(db, "hello")
+      true
+      iex> DB.has_key?(db, "other")
+      false
+
+  """
+  def has_key?(db, key) do
+    Native.db_key_exists(to_ref(db), key)
   end
 
   @doc """
@@ -186,7 +194,7 @@ defmodule Soy.DB do
       iex> {:ok, "world"} = Soy.fetch(db, "hello")
   """
   def fetch(db, key) do
-    Native.fetch(to_ref(db), key)
+    Native.db_fetch(to_ref(db), key)
   end
 
   @doc """
@@ -272,7 +280,7 @@ defmodule Soy.DB do
 
   """
   def delete(db, key) do
-    Native.delete(to_ref(db), key)
+    Native.db_delete(to_ref(db), key)
   end
 
   @doc """
@@ -283,25 +291,25 @@ defmodule Soy.DB do
   ## Examples
 
     iex> db = Soy.open(tmp_dir())
-    iex> cf = ColFam.build(db, "ages")
-    iex> :ok = ColFam.create(cf)
+    iex> cf = DBCol.build(db, "ages")
+    iex> :ok = DBCol.create_new(cf)
     iex> ops = [{:put, "name", "bill"}, {:put_cf, "ages", "bill", "28"}]
     iex> 2 = Soy.batch(db, ops)
     iex> Soy.get(db, "name")
     "bill"
-    iex> ColFam.get(cf, "bill")
+    iex> DBCol.get(cf, "bill")
     "28"
 
   """
   def batch(db, ops) when is_list(ops) do
-    Native.batch(to_ref(db), ops)
+    Native.db_batch(to_ref(db), ops)
   end
 
   @doc """
   Gets multiple keys from the db.
   """
   def multi_get(db, keys) do
-    Native.multi_get(to_ref(db), keys)
+    Native.db_multi_get(to_ref(db), keys)
   end
 
   @doc """

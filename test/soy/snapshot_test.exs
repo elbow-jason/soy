@@ -1,7 +1,7 @@
 defmodule Soy.SnapshotTest do
   use ExUnit.Case
   import Soy.TestHelpers
-  alias Soy.{ColFam, Iter, Snapshot}
+  alias Soy.{DBCol, Iter, Snapshot}
 
   describe "new/1" do
     test "returns a reference" do
@@ -44,14 +44,14 @@ defmodule Soy.SnapshotTest do
   describe "fetch_cf" do
     test "can fetch entries that exist when the ss is created" do
       db = Soy.open(tmp_dir())
-      cf = ColFam.build(db, "items")
-      :ok = ColFam.create(cf)
-      :ok = ColFam.put(cf, "k1", "v1")
-      :ok = ColFam.put(cf, "k2", "v2")
-      :ok = ColFam.put(cf, "k3", "v3")
-      assert {:ok, "v1"} = ColFam.fetch(cf, "k1")
-      assert {:ok, "v2"} = ColFam.fetch(cf, "k2")
-      assert {:ok, "v3"} = ColFam.fetch(cf, "k3")
+      cf = DBCol.build(db, "items")
+      :ok = DBCol.create_new(cf)
+      :ok = DBCol.put(cf, "k1", "v1")
+      :ok = DBCol.put(cf, "k2", "v2")
+      :ok = DBCol.put(cf, "k3", "v3")
+      assert {:ok, "v1"} = DBCol.fetch(cf, "k1")
+      assert {:ok, "v2"} = DBCol.fetch(cf, "k2")
+      assert {:ok, "v3"} = DBCol.fetch(cf, "k3")
       ss = Snapshot.new(db)
       assert {:ok, "v1"} = Snapshot.fetch_cf(ss, cf, "k1")
       assert {:ok, "v2"} = Snapshot.fetch_cf(ss, cf, "k2")
@@ -60,15 +60,15 @@ defmodule Soy.SnapshotTest do
 
     test "cannot fetch entries made after the ss is created" do
       db = Soy.open(tmp_dir())
-      cf = ColFam.build(db, "items")
-      :ok = ColFam.create(cf)
-      :ok = ColFam.put(cf, "k1", "v1")
-      :ok = ColFam.put(cf, "k2", "v2")
+      cf = DBCol.build(db, "items")
+      :ok = DBCol.create_new(cf)
+      :ok = DBCol.put(cf, "k1", "v1")
+      :ok = DBCol.put(cf, "k2", "v2")
       ss = Snapshot.new(db)
-      :ok = ColFam.put(cf, "k3", "v3")
-      assert {:ok, "v1"} = ColFam.fetch(cf, "k1")
-      assert {:ok, "v2"} = ColFam.fetch(cf, "k2")
-      assert {:ok, "v3"} = ColFam.fetch(cf, "k3")
+      :ok = DBCol.put(cf, "k3", "v3")
+      assert {:ok, "v1"} = DBCol.fetch(cf, "k1")
+      assert {:ok, "v2"} = DBCol.fetch(cf, "k2")
+      assert {:ok, "v3"} = DBCol.fetch(cf, "k3")
       assert {:ok, "v1"} = Snapshot.fetch_cf(ss, cf, "k1")
       assert {:ok, "v2"} = Snapshot.fetch_cf(ss, cf, "k2")
       assert :error = Snapshot.fetch_cf(ss, cf, "k3")
@@ -112,21 +112,21 @@ defmodule Soy.SnapshotTest do
   describe "multi_get_cf/2" do
     test "returns existing values and nil for entries before creation" do
       db = Soy.open(tmp_dir())
-      cf1 = ColFam.build(db, "cf1")
-      cf2 = ColFam.build(db, "cf2")
-      :ok = ColFam.create(cf1)
-      :ok = ColFam.create(cf2)
+      cf1 = DBCol.build(db, "cf1")
+      cf2 = DBCol.build(db, "cf2")
+      :ok = DBCol.create_new(cf1)
+      :ok = DBCol.create_new(cf2)
 
-      :ok = ColFam.put(cf1, "k1", "v1")
-      :ok = ColFam.put(cf2, "k3", "v3")
+      :ok = DBCol.put(cf1, "k1", "v1")
+      :ok = DBCol.put(cf2, "k3", "v3")
       ss = Snapshot.new(db)
-      :ok = ColFam.put(cf1, "k2", "v2")
-      :ok = ColFam.put(cf2, "k4", "v4")
+      :ok = DBCol.put(cf1, "k2", "v2")
+      :ok = DBCol.put(cf2, "k4", "v4")
       keys = ["k1", "k2", "k3", "k4"]
 
       pairs =
         for cf <- [cf1, cf2] do
-          name = ColFam.name(cf)
+          name = DBCol.name(cf)
 
           for k <- keys do
             {name, k}
@@ -134,8 +134,8 @@ defmodule Soy.SnapshotTest do
         end
         |> List.flatten()
 
-      assert ColFam.multi_get(cf1, keys) == ["v1", "v2", nil, nil]
-      assert ColFam.multi_get(cf2, keys) == [nil, nil, "v3", "v4"]
+      assert DBCol.multi_get(cf1, keys) == ["v1", "v2", nil, nil]
+      assert DBCol.multi_get(cf2, keys) == [nil, nil, "v3", "v4"]
       assert Snapshot.multi_get_cf(ss, pairs) == ["v1", nil, nil, nil, nil, nil, "v3", nil]
     end
   end

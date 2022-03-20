@@ -3,35 +3,45 @@ defmodule Soy.Native do
 
   defp err, do: :erlang.nif_error(:nif_not_loaded)
 
-  # create/destoy
-  def open(_path, _options), do: err()
-  def destroy(_path), do: err()
+  # path ops
+  def path_open_db(_path, _options), do: err()
+  def path_destroy(_path), do: err()
+  def path_repair(_path), do: err()
+  def path_list_cf(_path), do: err()
 
-  # repair
-  def checkpoint(_db, _checkpoint_path), do: err()
-  def repair(_path), do: err()
+  def db_checkpoint(_db, _checkpoint_path), do: err()
 
   # flush/sync to disk
-  def flush(_db), do: err()
-  def flush_wal(_db, _sync), do: err()
-  def flush_cf(_db, _name), do: err()
+  def db_flush(_db), do: err()
+  def db_flush_wal(_db, _sync), do: err()
+  def db_flush_cf(_db, _name), do: err()
 
   # metadata
-  def list_cf(_path), do: err()
-  def path(_db), do: err()
-  def live_files(_db), do: err()
+  def db_path(_db), do: err()
+  def db_live_files(_db), do: err()
 
-  # db store
-  def put(_db, _key, _val), do: err()
-  def merge(_db, _key, _val), do: err()
-  def fetch(_db, _key), do: err()
-  def delete(_db, _key), do: err()
+  # db reads
+  def db_fetch(_db, _key), do: err()
+  def db_fetch_cf(_db, _cf, _key), do: err()
+  def db_multi_get(_db, _keys), do: err()
+  def db_multi_get_cf(_db, _cf_and_key_pairs), do: err()
+  def db_key_may_exist(_db, _key), do: err()
+  def db_key_may_exist_cf(_db, _cf, _key), do: err()
+  def db_key_exists(_db, _key), do: err()
+  def db_key_exists_cf(_db, _cf, _key), do: err()
 
-  # batch mutation
-  def batch(_db, _ops_list), do: err()
+  # db mutations
+  def db_merge(_db, _key, _val), do: err()
+  def db_merge_cf(_db, _cf, _key, _val), do: err()
+  def db_delete(_db, _key), do: err()
+  def db_delete_cf(_db, _cf, _key), do: err()
+  def db_put(_db, _key, _val), do: err()
+  def db_put_cf(_db, _cf, _key, _val), do: err()
+  def db_batch(_db, _ops_list), do: err()
 
-  # get multiple values or nils
-  def multi_get(_db, _keys), do: err()
+  # cf create/drop
+  def db_create_cf(_db, _cf, _open_cfg), do: err()
+  def db_drop_cf(_db, _cf), do: err()
 
   # iteration for both db and cf based on itermode
   def db_iter(_db), do: err()
@@ -46,23 +56,12 @@ defmodule Soy.Native do
   def iter_value(_it), do: err()
   def iter_key_value(_it), do: err()
 
-  # cf create/drop
-  def create_cf(_db, _cf_name, _open_cfg), do: err()
-  def drop_cf(_db, _cf_name), do: err()
-
-  # cf store
-  def put_cf(_db, _cf_name, _key, _val), do: err()
-  def merge_cf(_db, _cf_name, _key, _val), do: err()
-  def fetch_cf(_db, _cf_name, _key), do: err()
-  def delete_cf(_db, _cf_name, _key), do: err()
-  def multi_get_cf(_db, _cf_and_key_pairs), do: err()
-
   # snapshot
-  def snapshot(_db), do: err()
+  def db_snapshot(_db), do: err()
   def ss_fetch(_ss, _key), do: err()
-  def ss_fetch_cf(_ss, _cf_name, _key), do: err()
+  def ss_fetch_cf(_ss, _cf, _key), do: err()
 
-  def ss_multi_get(_db, _keys), do: err()
+  def ss_multi_get(_ss, _keys), do: err()
   def ss_multi_get_cf(_ss, _cf_and_key_pairs), do: err()
 
   # write opts
@@ -72,6 +71,6 @@ defmodule Soy.Native do
   def read_opts_default, do: err()
 
   # properties
-  def get_property(_db, _prop), do: err()
-  def list_properties(_db), do: err()
+  def db_get_property(_db, _prop), do: err()
+  def db_list_properties(_db), do: err()
 end
