@@ -37,6 +37,9 @@ pub mod merger;
 mod db_col_fam;
 use db_col_fam::{DbColFamResource, SoyDbColFam};
 
+mod soy_db;
+use soy_db::{DbResource, SoyDb};
+
 macro_rules! ok_or_err {
     ($res:expr) => {
         match $res {
@@ -45,29 +48,6 @@ macro_rules! ok_or_err {
         }
     };
 }
-
-mod soy_db {
-    use rocksdb::DB as RocksDb;
-    use rustler::ResourceArc;
-
-    pub type SoyDb = ResourceArc<DbResource>;
-
-    pub struct DbResource {
-        rdb: RocksDb,
-    }
-
-    impl DbResource {
-        pub fn new(rdb: RocksDb) -> SoyDb {
-            ResourceArc::new(DbResource { rdb })
-        }
-
-        pub fn rocks_db_ref(&self) -> &RocksDb {
-            &self.rdb
-        }
-    }
-}
-
-use soy_db::{DbResource, SoyDb};
 
 type SoyIter = ResourceArc<IterResource>;
 
