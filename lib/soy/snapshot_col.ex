@@ -5,17 +5,20 @@ defmodule Soy.SnapshotCol do
 
   alias Soy.{Snapshot, SnapshotCol, Native}
 
-  @doc """
-  Builds a tuple with the `db` and `name`.
-  """
-  def build({Snapshot, ss}, name) do
-    {SnapshotCol, {ss, name}}
+  def open(ss, name) do
+    ss
+    |> Snapshot.to_ref()
+    |> Native.ss_open_ss_cf(name)
+    |> case do
+      {:ok, cf_ss_ref} -> {:ok, {SnapshotCol, cf_ss_ref}}
+      {:error, _} = err -> err
+    end
   end
 
   @doc """
   The name of the column family.
   """
-  def name(ss_cf), do: Soy.Native.ss_cf_name(ss_cf)
+  def name(ss_cf), do: Soy.Native.ss_cf_name(to_ref(ss_cf))
 
   @doc """
   The db of the column family.
@@ -54,11 +57,15 @@ defmodule Soy.SnapshotCol do
   """
   def multi_get(ss_cf, keys) do
     ss_cf_ref = to_ref(ss_cf)
-    pairs = Enum.map(keys, fn k -> {ss_cf_ref, k} end)
-    Native.db_cf_multi_get(pairs)
+    pairs = Enum.map(keys, fn k when is_binary(k) -> {ss_cf_ref, k} end)
+    Native.ss_cf_multi_get(pairs)
   end
 
-  # def fetch_cf(ss, cf, key), do: Native.ss_cf_fetch_cf(to_ref(ss), DBCol.name(cf), key)
-
-  # def multi_get_cf(ss, cf_and_key_pairs), do: Native.ss_multi_get_cf(to_ref(ss), cf_and_key_pairs)
+  @doc """
+  Gets binary value or nil for a list of {cf, key} pairs.
+  """
+  def multi_get(pairs) do
+    pairs = Enum.map(pairs, fn {ss_cf, k} -> {to_ref(ss_cf), k} end)
+    Native.ss_cf_multi_get(pairs)
+  end
 end

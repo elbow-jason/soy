@@ -23,14 +23,19 @@ defmodule Soy.DBCol do
   """
   def open(db, name) do
     db_ref = DB.to_ref(db)
-    Native.db_open_existing_cf(db_ref, name)
+
+    case Native.db_open_existing_cf(db_ref, name) do
+      db_cf_ref when is_reference(db_cf_ref) -> {:ok, {DBCol, db_cf_ref}}
+      {:error, _} = err -> err
+    end
   end
 
   @doc """
   The name of the column family.
   """
-  def name({DBCol, {_, name}}), do: name
-  def name(name) when is_binary(name), do: name
+  def name({DBCol, db_cf_ref}) do
+    Native.db_cf_name(db_cf_ref)
+  end
 
   # @doc """
   # The db of the column family.
@@ -48,7 +53,10 @@ defmodule Soy.DBCol do
   # WARNING - this causes data loss of the column family for the specified `name`
   """
   def destroy(cf) do
-    Native.db_drop_cf(to_ref(cf), name(cf))
+    db_cf_ref = to_ref(cf)
+    db_ref = Native.db_cf_into_db(db_cf_ref)
+    name = Native.db_cf_name(db_cf_ref)
+    Native.db_drop_cf(db_ref, name)
   end
 
   @doc """

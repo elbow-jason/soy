@@ -516,7 +516,7 @@ fn db_cf_has_key(db_cf: SoyDbColFam, key: Binary) -> bool {
     if !may_exist {
         return false;
     }
-    match db_cf.rocks_db_ref().get(&key[..]) {
+    match db_cf.rocks_db_ref().get_cf(db_cf.handle(), &key[..]) {
         Ok(Some(_)) => true,
         Ok(None) => false,
         Err(e) => panic!("{}", e),
