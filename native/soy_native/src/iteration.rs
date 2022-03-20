@@ -1,6 +1,6 @@
-use crate::{SoyDb, SoyIter, SoySnapshot, Error, new_binary, atoms};
-use rocksdb::{DBRawIteratorWithThreadMode, DB as RocksDb, DBWALIterator, WriteBatchIterator};
-use rustler::{ResourceArc, Encoder, Env, Term};
+use crate::{atoms, new_binary, Error, SoyDb, SoyIter, SoySnapshot};
+use rocksdb::{DBRawIteratorWithThreadMode, DBWALIterator, WriteBatchIterator, DB as RocksDb};
+use rustler::{Encoder, Env, ResourceArc, Term};
 use std::ops::Drop;
 
 use std::sync::RwLock;
@@ -126,12 +126,12 @@ pub trait SafeIteration {
 
 impl SafeIteration for SoyDb {
     fn safe_iter<'a>(&'a self) -> SafeIter<'a> {
-        SafeIter::new_unseeked(self.rdb.raw_iterator())
+        SafeIter::new_unseeked(self.rocks_db_ref().raw_iterator())
     }
 
     fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
-        let cf_handle = self.rdb.cf_handle(name).unwrap();
-        let it = self.rdb.raw_iterator_cf(&cf_handle);
+        let cf_handle = self.rocks_db_ref().cf_handle(name).unwrap();
+        let it = self.rocks_db_ref().raw_iterator_cf(&cf_handle);
         SafeIter::new_unseeked(it)
     }
 }
@@ -142,7 +142,7 @@ impl SafeIteration for SoySnapshot {
     }
 
     fn safe_iter_cf<'a>(&'a self, name: &'a str) -> SafeIter<'a> {
-        let cf_handle = self.db.rdb.cf_handle(name).unwrap();
+        let cf_handle = self.db.rocks_db_ref().cf_handle(name).unwrap();
         let it = self.rss.raw_iterator_cf(&cf_handle);
         SafeIter::new_unseeked(it)
     }
@@ -262,7 +262,10 @@ unsafe impl Sync for WalIterator {}
 
 impl WalIterator {
     pub fn new(db: SoyDb, since: u64) -> Result<WalIterator, Error> {
-        let it = db.rdb.get_updates_since(since).map_err(|e| Error::WalIteratorCreationError(format!("{}", e)))?;
+        let it = db
+            .rocks_db_ref()
+            .get_updates_since(since)
+            .map_err(|e| Error::WalIteratorCreationError(format!("{}", e)))?;
         Ok(WalIterator {
             _db: db,
             it: RwLock::new(it),
@@ -275,7 +278,7 @@ impl WalIterator {
             match it.next() {
                 None => None,
                 Some((seq_number, write_batch)) => {
-                    let mut list = WalBatchList{items: Vec::new()};
+                    let mut list = WalBatchList { items: Vec::new() };
                     write_batch.iterate(&mut list);
                     Some((seq_number, list.items))
                 }
@@ -287,20 +290,24 @@ impl WalIterator {
 }
 
 pub enum WalRow {
-    Put{key: Box<[u8]>, value: Box<[u8]>},
-    Delete{key: Box<[u8]>}
+    Put { key: Box<[u8]>, value: Box<[u8]> },
+    Delete { key: Box<[u8]> },
 }
 
 impl Encoder for WalRow {
     fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
         match self {
-            WalRow::Put{key: ref k, value: ref v} => {
-                (atoms::put(), new_binary(&k[..], env), new_binary(&v[..], env)).encode(env)
-            }
-            WalRow::Delete{key: ref k} => {
-                (atoms::put(), new_binary(&k[..], env)).encode(env)
-            }
-        }   
+            WalRow::Put {
+                key: ref k,
+                value: ref v,
+            } => (
+                atoms::put(),
+                new_binary(&k[..], env),
+                new_binary(&v[..], env),
+            )
+                .encode(env),
+            WalRow::Delete { key: ref k } => (atoms::put(), new_binary(&k[..], env)).encode(env),
+        }
     }
 }
 
@@ -310,14 +317,13 @@ pub struct WalBatchList {
 
 impl WriteBatchIterator for WalBatchList {
     fn put(&mut self, key: Box<[u8]>, value: Box<[u8]>) {
-        self.items.push(WalRow::Put{ key, value });
+        self.items.push(WalRow::Put { key, value });
     }
 
     fn delete(&mut self, key: Box<[u8]>) {
-        self.items.push(WalRow::Delete{ key });
+        self.items.push(WalRow::Delete { key });
     }
 }
-
 
 // #[derive(NifRecord)]
 // #[tag = "prefix"]
