@@ -86,4 +86,6 @@ defmodule Soy.Native do
   def ss_cf_iter(_ss_cf), do: err()
   def ss_cf_name(_ss_cf), do: err()
   def ss_cf_into_ss(_ss_cf), do: err()
+
+  def resource_kind(_resource), do: err()
 end

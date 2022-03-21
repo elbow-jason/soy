@@ -3,7 +3,7 @@ defmodule Soy do
   Documentation for `Soy`.
   """
 
-  alias Soy.{DB, Native}
+  alias Soy.{DB, DBCol, Native, Snapshot, SnapshotCol}
 
   def open(path, opts \\ []) do
     DB.open(path, opts)
@@ -109,6 +109,17 @@ defmodule Soy do
   end
 
   def snapshot(db), do: DB.snapshot(db)
+
+  def kind(ref), do: Native.resource_kind(ref)
+
+  def impl(ref) do
+    case kind(ref) do
+      :db -> DB
+      :db_cf -> DBCol
+      :ss -> Snapshot
+      :ss_cf -> SnapshotCol
+    end
+  end
 
   if Mix.env() == :dev do
     def tmp_dir do

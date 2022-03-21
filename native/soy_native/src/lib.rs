@@ -622,6 +622,38 @@ fn read_opts_default() -> SoyReadOpts {
     SoyReadOpts::default()
 }
 
+#[derive(NifUntaggedEnum)]
+pub enum SoyResource {
+    Db(SoyDb),
+    DbCf(SoyDbColFam),
+    Ss(SoySnapshot),
+    SsCf(SoySsColFam),
+}
+
+#[derive(NifUnitEnum)]
+pub enum SoyResourceKind {
+    Db,
+    DbCf,
+    Ss,
+    SsCf,
+}
+
+impl SoyResource {
+    fn kind(&self) -> SoyResourceKind {
+        match self {
+            SoyResource::Db(_) => SoyResourceKind::Db,
+            SoyResource::DbCf(_) => SoyResourceKind::DbCf,
+            SoyResource::Ss(_) => SoyResourceKind::Ss,
+            SoyResource::SsCf(_) => SoyResourceKind::SsCf,
+        }
+    }
+}
+
+#[rustler::nif]
+fn resource_kind(r: SoyResource) -> SoyResourceKind {
+    r.kind()
+}
+
 fn load(env: Env, _: Term) -> bool {
     rustler::resource!(DbResource, env);
     rustler::resource!(DbColFamResource, env);

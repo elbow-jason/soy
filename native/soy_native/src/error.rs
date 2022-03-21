@@ -3,10 +3,10 @@ use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
 pub enum Error {
-    #[error("column family does not exist: {}", 0)]
+    #[error("column family does not exist: {}", _0)]
     ColumnFamilyDoesNotExist(String),
 
-    #[error("failed to create wal iterator: {}", 0)]
+    #[error("failed to create wal iterator: {}", _0)]
     WalIteratorCreationError(String),
     // #[error("wal iterator was invalid")]
     // WalIteratorInvalid,

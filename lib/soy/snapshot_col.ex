@@ -5,12 +5,12 @@ defmodule Soy.SnapshotCol do
 
   alias Soy.{Snapshot, SnapshotCol, Native}
 
-  def open(ss, name) do
+  def new(ss, name) when is_binary(name) do
     ss
     |> Snapshot.to_ref()
     |> Native.ss_open_ss_cf(name)
     |> case do
-      {:ok, cf_ss_ref} -> {:ok, {SnapshotCol, cf_ss_ref}}
+      cf_ss_ref when is_reference(cf_ss_ref) -> {:ok, {SnapshotCol, cf_ss_ref}}
       {:error, _} = err -> err
     end
   end
