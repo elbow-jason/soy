@@ -41,41 +41,7 @@ defmodule Soy.SnapshotTest do
     end
   end
 
-  describe "fetch_cf" do
-    # test "can fetch entries that exist when the ss is created" do
-    #   db = Soy.open(tmp_dir())
-    #   cf = DBCol.build(db, "items")
-    #   :ok = DBCol.create_new(cf)
-    #   :ok = DBCol.put(cf, "k1", "v1")
-    #   :ok = DBCol.put(cf, "k2", "v2")
-    #   :ok = DBCol.put(cf, "k3", "v3")
-    #   assert {:ok, "v1"} = DBCol.fetch(cf, "k1")
-    #   assert {:ok, "v2"} = DBCol.fetch(cf, "k2")
-    #   assert {:ok, "v3"} = DBCol.fetch(cf, "k3")
-    #   ss = Snapshot.new(db)
-    #   assert {:ok, "v1"} = Snapshot.fetch_cf(ss, cf, "k1")
-    #   assert {:ok, "v2"} = Snapshot.fetch_cf(ss, cf, "k2")
-    #   assert {:ok, "v3"} = Snapshot.fetch_cf(ss, cf, "k3")
-    # end
-
-    # test "cannot fetch entries made after the ss is created" do
-    #   db = Soy.open(tmp_dir())
-    #   cf = DBCol.build(db, "items")
-    #   :ok = DBCol.create_new(cf)
-    #   :ok = DBCol.put(cf, "k1", "v1")
-    #   :ok = DBCol.put(cf, "k2", "v2")
-    #   ss = Snapshot.new(db)
-    #   :ok = DBCol.put(cf, "k3", "v3")
-    #   assert {:ok, "v1"} = DBCol.fetch(cf, "k1")
-    #   assert {:ok, "v2"} = DBCol.fetch(cf, "k2")
-    #   assert {:ok, "v3"} = DBCol.fetch(cf, "k3")
-    #   assert {:ok, "v1"} = Snapshot.fetch_cf(ss, cf, "k1")
-    #   assert {:ok, "v2"} = Snapshot.fetch_cf(ss, cf, "k2")
-    #   assert :error = Snapshot.fetch_cf(ss, cf, "k3")
-    # end
-  end
-
-  describe "iter/2" do
+  describe "iter/1" do
     test "iterates through snapshotted entries" do
       db = Soy.open(tmp_dir())
       :ok = Soy.put(db, "k1", "v1")
@@ -107,36 +73,5 @@ defmodule Soy.SnapshotTest do
       assert Soy.multi_get(db, keys) == [nil, "v1", "v2", "v3"]
       assert Snapshot.multi_get(ss, keys) == [nil, "v1", nil, "v3"]
     end
-  end
-
-  describe "multi_get_cf/2" do
-    # test "returns existing values and nil for entries before creation" do
-    #   db = Soy.open(tmp_dir())
-    #   cf1 = DBCol.build(db, "cf1")
-    #   cf2 = DBCol.build(db, "cf2")
-    #   :ok = DBCol.create_new(cf1)
-    #   :ok = DBCol.create_new(cf2)
-
-    #   :ok = DBCol.put(cf1, "k1", "v1")
-    #   :ok = DBCol.put(cf2, "k3", "v3")
-    #   ss = Snapshot.new(db)
-    #   :ok = DBCol.put(cf1, "k2", "v2")
-    #   :ok = DBCol.put(cf2, "k4", "v4")
-    #   keys = ["k1", "k2", "k3", "k4"]
-
-    #   pairs =
-    #     for cf <- [cf1, cf2] do
-    #       name = DBCol.name(cf)
-
-    #       for k <- keys do
-    #         {name, k}
-    #       end
-    #     end
-    #     |> List.flatten()
-
-    #   assert DBCol.multi_get(cf1, keys) == ["v1", "v2", nil, nil]
-    #   assert DBCol.multi_get(cf2, keys) == [nil, nil, "v3", "v4"]
-    #   assert Snapshot.multi_get_cf(ss, pairs) == ["v1", nil, nil, nil, nil, nil, "v3", nil]
-    # end
   end
 end

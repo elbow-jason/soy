@@ -3,7 +3,7 @@ defmodule Soy.SnapshotCol do
   For dealing with a column family.
   """
 
-  alias Soy.{Snapshot, SnapshotCol, Native}
+  alias Soy.{Iter, Snapshot, SnapshotCol, Native}
 
   def new(ss, name) when is_binary(name) do
     ss
@@ -67,5 +67,9 @@ defmodule Soy.SnapshotCol do
   def multi_get(pairs) do
     pairs = Enum.map(pairs, fn {ss_cf, k} -> {to_ref(ss_cf), k} end)
     Native.ss_cf_multi_get(pairs)
+  end
+
+  def iter(ss_cf) do
+    Iter.new(ss_cf)
   end
 end

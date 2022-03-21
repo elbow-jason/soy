@@ -1,5 +1,5 @@
 defmodule Soy.Iter do
-  alias Soy.{DBCol, DB, Iter, Native, Snapshot}
+  alias Soy.{SnapshotCol, DBCol, DB, Iter, Native, Snapshot}
 
   @doc """
   Gets a key-ordered-iterator for the db.
@@ -33,9 +33,10 @@ defmodule Soy.Iter do
       nil
   """
   def new(store)
-  def new({DB, db}), do: {Iter, DB, Native.db_iter(db)}
-  def new({Snapshot, ss}), do: {Iter, Snapshot, Native.ss_iter(ss)}
-  def new({DBCol, cf}), do: {Iter, DBCol, Native.db_cf_iter(cf)}
+  def new({DB, db}), do: {Iter, Native.db_iter(db)}
+  def new({Snapshot, ss}), do: {Iter, Native.ss_iter(ss)}
+  def new({SnapshotCol, ss}), do: {Iter, Native.ss_cf_iter(ss)}
+  def new({DBCol, cf}), do: {Iter, Native.db_cf_iter(cf)}
 
   # def new(store, cf_name) do
   #   case store do
@@ -70,6 +71,6 @@ defmodule Soy.Iter do
 
   def valid?(it), do: Soy.Native.iter_valid(to_ref(it))
 
-  def to_ref({Iter, _, ref}) when is_reference(ref), do: ref
+  def to_ref({Iter, ref}) when is_reference(ref), do: ref
   def to_ref(ref) when is_reference(ref), do: ref
 end

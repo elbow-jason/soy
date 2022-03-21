@@ -1,5 +1,5 @@
 defmodule Soy.DB do
-  alias Soy.{DB, Native, OpenOpts, Snapshot, DBCol}
+  alias Soy.{DB, Iter, Native, OpenOpts, Snapshot, DBCol}
 
   @doc """
   Opens a db at the given path with the given options list or
@@ -307,5 +307,12 @@ defmodule Soy.DB do
   """
   def snapshot(db) do
     Snapshot.new(to_ref(db))
+  end
+
+  @doc """
+  Creates an iter for the `db`.
+  """
+  def iter(db) do
+    Iter.new(db)
   end
 end
