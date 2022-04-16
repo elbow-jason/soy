@@ -3,39 +3,46 @@ defmodule Soy.SnapshotCol do
   For dealing with a column family.
   """
 
-  alias Soy.{Iter, Snapshot, SnapshotCol, Native}
+  alias Soy.{Iter, Snapshot, SnapshotCol, DBCol}
 
-  def new(ss, name) when is_binary(name) do
-    ss
-    |> Snapshot.to_ref()
-    |> Native.ss_open_ss_cf(name)
-    |> case do
-      cf_ss_ref when is_reference(cf_ss_ref) -> {:ok, {SnapshotCol, cf_ss_ref}}
-      {:error, _} = err -> err
+  defstruct ss_ref: nil, db_ref: nil, cf_ref: nil, name: nil
+
+  def new(%Snapshot{ss_ref: ss_ref, db_ref: ss_db_ref}, %DBCol{
+        name: name,
+        db_ref: cf_db_ref,
+        cf_ref: cf_ref
+      }) do
+    if ss_db_ref != cf_db_ref do
+      raise "cannot build Soy.SnapshotCol from different db - name: #{inspect(name)}"
+    end
+
+    %SnapshotCol{
+      name: name,
+      ss_ref: ss_ref,
+      db_ref: ss_db_ref,
+      cf_ref: cf_ref
+    }
+  end
+
+  def name(%SnapshotCol{name: name}), do: name
+
+  # @doc """
+  # The db of the column family.
+  # """
+  # def ss_ref(%Snapshot{}), do: ss_cf_ref
+
+  @doc """
+  Fetches the binary value of the `key` in the `db` at the column family.
+  """
+  def fetch(%SnapshotCol{} = sc, key) do
+    case :rocksdb.get(sc.db_ref, sc.cf_ref, key, snapshot: sc.ss_ref) do
+      {:ok, _} = okay -> okay
+      :not_found -> :error
     end
   end
 
   @doc """
-  The name of the column family.
-  """
-  def name(ss_cf), do: Soy.Native.ss_cf_name(to_ref(ss_cf))
-
-  @doc """
-  The db of the column family.
-  """
-  def to_ref({SnapshotCol, ss_cf_ref}), do: ss_cf_ref
-
-  @doc """
-  Fetches the binary value of the `key` in the `db` at the column family
-  with `name`.
-  """
-  def fetch(ss_cf, key) do
-    Native.ss_cf_fetch(to_ref(ss_cf), key)
-  end
-
-  @doc """
-  Gets the binary value of `key` in the `db` at the column family
-  with `name`.
+  Gets the binary value of `key` in the `db` at the column family.
   """
   def get(cf, key, default \\ nil) do
     case fetch(cf, key) do
@@ -45,31 +52,38 @@ defmodule Soy.SnapshotCol do
   end
 
   # @doc """
-  # Gets the kv-entry with `key` in the `db` at the column family
-  # with `name`.
+  # Gets binary value or nil for a list of {cf, key} pairs.
   # """
-  # def delete(cf, key) do
-  #   Native.db_delete_cf(db_ref(cf), name(cf), key)
+  # def multi_get(ss_cf, keys) do
+  #   ss_cf_ref = to_ref(ss_cf)
+  #   pairs = Enum.map(keys, fn k when is_binary(k) -> {ss_cf_ref, k} end)
+  #   Native.ss_cf_multi_get(pairs)
   # end
 
-  @doc """
-  Gets binary value or nil for a list of {cf, key} pairs.
-  """
-  def multi_get(ss_cf, keys) do
-    ss_cf_ref = to_ref(ss_cf)
-    pairs = Enum.map(keys, fn k when is_binary(k) -> {ss_cf_ref, k} end)
-    Native.ss_cf_multi_get(pairs)
-  end
-
-  @doc """
-  Gets binary value or nil for a list of {cf, key} pairs.
-  """
-  def multi_get(pairs) do
-    pairs = Enum.map(pairs, fn {ss_cf, k} -> {to_ref(ss_cf), k} end)
-    Native.ss_cf_multi_get(pairs)
-  end
+  # @doc """
+  # Gets binary value or nil for a list of {cf, key} pairs.
+  # """
+  # def multi_get(pairs) do
+  #   pairs = Enum.map(pairs, fn {ss_cf, k} -> {to_ref(ss_cf), k} end)
+  #   Native.ss_cf_multi_get(pairs)
+  # end
 
   def iter(ss_cf) do
     Iter.new(ss_cf)
+  end
+
+  def reduce_keys(
+        %SnapshotCol{db_ref: db_ref, ss_ref: ss_ref, cf_ref: cf_ref},
+        acc,
+        opts \\ [],
+        func
+      )
+      when is_function(func, 2) do
+    :rocksdb.fold_keys(db_ref, cf_ref, func, acc, [{:snapshot, ss_ref} | opts])
+  end
+
+  def reduce(%SnapshotCol{db_ref: db_ref, ss_ref: ss_ref, cf_ref: cf_ref}, acc, opts \\ [], func)
+      when is_function(func, 2) do
+    :rocksdb.fold(db_ref, cf_ref, func, acc, [{:snapshot, ss_ref} | opts])
   end
 end

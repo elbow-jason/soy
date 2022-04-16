@@ -1,94 +1,111 @@
 defmodule Soy.DB do
-  alias Soy.{DB, Iter, Native, OpenOpts, Snapshot, DBCol}
+  alias Soy.{DB, Iter, Snapshot, DBCol, Batch}
+
+  defstruct db_ref: nil
 
   @doc """
-  Opens a db at the given path with the given options list or
-  Soy.OpenOpts struct.
-
-  See Soy.OpenOpts for specific more information.
+  Opens a db at the given `path` with the given `opts`.
 
   ## Examples
 
-      iex> {DB, db} = DB.open(tmp_dir())
-      iex> is_reference(db)
+      iex> {:ok, db, [default]} = DB.open(tmp_dir())
+      iex> %DB{} = db
+      iex> %DBCol{} = default
+      iex> default.name
+      "default"
+      iex> is_reference(db.db_ref)
       true
 
-      iex> {DB, db} = DB.open(tmp_dir(), %OpenOpts{prefix_length: 3})
-      iex> is_reference(db)
-      true
-
-      iex> {DB, db} = DB.open(tmp_dir(), [prefix_length: 3])
-      iex> is_reference(db)
+      iex> {:ok, db, [_]} = DB.open(tmp_dir(), [prefix_length: 3])
+      iex> is_reference(db.db_ref)
       true
 
   """
-  def open(path, options \\ [])
+  def open(path, opts \\ []) do
+    opts = Keyword.put_new(opts, :create_if_missing, true)
+    charpath = to_charlist(path)
+    cols = list_columns_chars(charpath)
+    cols_and_opts = Enum.map(cols, fn col -> {col, []} end)
+    cols_and_opts = [{'default', []} | cols_and_opts]
 
-  def open(path, opts) when is_list(opts) do
-    open(path, struct!(OpenOpts, opts))
-  end
+    case :rocksdb.open(charpath, opts, cols_and_opts) do
+      {:ok, db_ref, col_refs} ->
+        db_cols =
+          cols_and_opts
+          |> Enum.zip(col_refs)
+          |> Enum.map(fn {{name, []}, col_ref} ->
+            DBCol.build(to_string(name), col_ref, db_ref)
+          end)
 
-  def open(path, %OpenOpts{} = open_config) do
-    {DB, Native.path_open_db(path, open_config)}
+        {:ok, build(db_ref), db_cols}
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   @doc """
-  Returns the reference of a tagged db or a reference itself.
+  Builds a Soy.DB struct.
   """
-  def to_ref({DB, ref}) when is_reference(ref), do: ref
-  def to_ref(ref) when is_reference(ref), do: ref
+  def build(db_ref) when is_reference(db_ref), do: %DB{db_ref: db_ref}
 
   @doc """
-  Lists the column families of the DB or path.
+  Lists the column families of given `path`.
 
   ## Examples
 
       iex> path = tmp_dir()
-      iex> db = Soy.open(path)
-      iex> Soy.list_columns(db)
-      ["default"]
+      iex> Soy.list_columns(path)
+      []
 
       iex> path = tmp_dir()
-      iex> db = Soy.open(path)
+      iex> {:ok, db, _} = Soy.open(path)
       iex> {:ok, _cf} = Soy.DBCol.create_new(db, "fam")
-      iex> Soy.list_columns(db)
-      ["default", "fam"]
       iex> Soy.list_columns(path)
       ["default", "fam"]
 
   """
-  def list_columns(db) do
-    Native.path_list_cf(DB.path(db))
+  def list_columns(path) do
+    Enum.map(list_columns_chars(path), fn col -> to_string(col) end)
+  end
+
+  defp list_columns_chars(path) do
+    case :rocksdb.list_column_families(to_charlist(path), []) do
+      {:ok, cols} -> cols
+      {:error, {:db_open, _}} -> []
+    end
   end
 
   @doc """
   Creates a column family in the db.
   """
-
-  def create_new_cf(db, name, opts \\ []) do
-    DBCol.create_new(db, name, opts)
+  def create_new_cf(%DB{db_ref: db_ref}, name, opts \\ []) do
+    case :rocksdb.create_column_family(db_ref, to_charlist(name), opts) do
+      {:ok, cf_ref} -> {:ok, DBCol.build(name, cf_ref, db_ref)}
+      {:error, _} = err -> err
+    end
   end
 
   @doc """
-  Destroys the db at the given path.
+  Destroys the db at the given `path`.
 
   # WARNING - causes data loss.
 
   ## Examples
 
       iex> path = tmp_dir()
-      iex> db = Soy.open(path)
+      iex> {:ok, db, [_]} = Soy.open(path)
       iex> :ok = Soy.put(db, "hello", "world")
       iex> "world" = Soy.get(db, "hello")
       iex> magically_drop_db_from_scope()
       iex> :ok = Soy.destroy(path)
-      iex> db = Soy.open(path)
+      iex> {:ok, db, [_]} = Soy.open(path)
       iex> Soy.get(db, "hello")
       nil
 
   """
-  def destroy(path) do
-    Native.path_destroy(path)
+  def destroy(path, opts \\ []) do
+    :rocksdb.destroy(to_charlist(path), opts)
   end
 
   @doc """
@@ -96,74 +113,75 @@ defmodule Soy.DB do
 
   ## Examples
       iex> path = tmp_dir()
-      iex> _db = Soy.open(path)
+      iex> {:ok, _db, [_]} = Soy.open(path)
       iex> magically_drop_db_from_scope()
       iex> :ok = Soy.repair(path)
-      iex> {DB, db} = Soy.open(path)
-      iex> is_reference(db)
+      iex> {:ok, db, [%{name: "default"}, %{name: "default"}]} = Soy.open(path)
+      iex> is_reference(db.db_ref)
       true
 
+  ## TODO: why are there 2 "default" column families after repairing?
   """
-  def repair(path) do
-    Native.path_repair(path)
+  def repair(path, opts \\ []) do
+    :rocksdb.repair(to_charlist(path), opts)
   end
 
-  @doc """
-  The path of the db.
+  # @doc """
+  # The path of the db.
 
-  # Examples
+  # # Examples
 
-      iex> path = tmp_dir()
-      iex> db = Soy.open(path)
-      iex> Soy.path(db) == path
-      true
+  #     iex> path = tmp_dir()
+  #     iex> {:ok, db, [_]} = Soy.open(path)
+  #     iex> Soy.path(db) == path
+  #     true
 
-  """
-  def path(db) do
-    Native.db_path(to_ref(db))
-  end
+  # """
+  # def path(db) do
+  #   Native.db_path(to_ref(db))
+  # end
 
-  @doc """
-  Returns the live files of the database.
+  # @doc """
+  # Returns the live files of the database.
 
-  When the DB is not processing files in the background
-  this function will return an empty list. If the DB is compacting
-  then the active SST files will be listed.
-  """
-  def live_files(db) do
-    Native.db_live_files(to_ref(db))
-  end
+  # When the DB is not processing files in the background
+  # this function will return an empty list. If the DB is compacting
+  # then the active SST files will be listed.
+  # """
+  # def live_files(db) do
+  #   Native.db_live_files(to_ref(db))
+  # end
 
   @doc """
   Stores a value in the DB.
 
   ## Examples
 
-    iex> db = Soy.open(tmp_dir())
+    iex> {:ok, db, [_]} = Soy.open(tmp_dir())
     iex> nil = Soy.get(db, "hello")
     iex> :ok = Soy.put(db, "hello", "world")
     iex> "world" = Soy.get(db, "hello")
   """
-  def put(db, key, val) do
-    Native.db_put(to_ref(db), key, val)
+  def put(%DB{db_ref: db_ref}, key, val, opts \\ []) do
+    :rocksdb.put(db_ref, key, val, opts)
   end
 
-  @doc """
-  Returns `true` or `false` based on the existence of a `key` in the `db`.
+  # @doc """
+  # Returns `true` or `false` based on the existence of a `key` in the `db`.
 
-  ## Examples
+  # ## Examples
 
-      iex> db = Soy.open(tmp_dir())
-      iex> :ok = Soy.put(db, "hello", "world")
-      iex> DB.has_key?(db, "hello")
-      true
-      iex> DB.has_key?(db, "other")
-      false
+  #     iex> {:ok, db, [_]} = Soy.open(tmp_dir())
+  #     iex> :ok = Soy.put(db, "hello", "world")
+  #     iex> DB.has_key?(db, "hello")
+  #     true
+  #     iex> DB.has_key?(db, "other")
+  #     false
 
-  """
-  def has_key?(db, key) do
-    Native.db_has_key(to_ref(db), key)
-  end
+  # """
+  # def has_key?(db, key) do
+  #   Native.db_has_key(to_ref(db), key)
+  # end
 
   @doc """
   Fetches a value from the DB.
@@ -175,17 +193,20 @@ defmodule Soy.DB do
 
   For a missing key:
 
-      iex> db = Soy.open(tmp_dir())
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
       iex> :error = Soy.fetch(db, "name")
 
   For an existing key:
 
-      iex> db = Soy.open(tmp_dir())
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
       iex> :ok = Soy.put(db, "hello", "world")
       iex> {:ok, "world"} = Soy.fetch(db, "hello")
   """
-  def fetch(db, key) do
-    Native.db_fetch(to_ref(db), key)
+  def fetch(%DB{db_ref: db_ref}, key) do
+    case :rocksdb.get(db_ref, key, []) do
+      :not_found -> :error
+      {:ok, _} = okay -> okay
+    end
   end
 
   @doc """
@@ -198,18 +219,20 @@ defmodule Soy.DB do
 
   For a missing key:
 
-      iex> tmp_dir() |> Soy.open() |> Soy.get("name")
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
+      iex> Soy.get(db, "name")
       nil
 
   For an existing key:
 
-      iex> db = Soy.open(tmp_dir())
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
       iex> :ok = Soy.put(db, "hello", "world")
       iex> "world" = Soy.get(db, "hello")
 
   For a missing key with a given `default`:
 
-      iex> tmp_dir() |> Soy.open() |> Soy.get("name", "you")
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
+      iex> Soy.get(db, "name", "you")
       "you"
 
   """
@@ -227,13 +250,13 @@ defmodule Soy.DB do
 
   For a missing key:
 
-      iex> db = DB.open(tmp_dir())
+      iex> {:ok, db, [_]} = DB.open(tmp_dir())
       iex> DB.fetch!(db, "name")
       ** (KeyError) key "name" not found in db
 
   For an existing key:
 
-      iex> db = Soy.open(tmp_dir())
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
       iex> :ok = Soy.put(db, "hello", "world")
       iex> Soy.fetch!(db, "hello")
       "world"
@@ -256,13 +279,13 @@ defmodule Soy.DB do
 
   For a missing key:
 
-      iex> db = Soy.open(tmp_dir())
+      iex> {:ok, db, [_]} = Soy.open(tmp_dir())
       iex> Soy.delete(db, "name")
       :ok
 
   For an existing key:
 
-      iex> db = DB.open(tmp_dir())
+      iex> {:ok, db, [_]} = DB.open(tmp_dir())
       iex> :ok = DB.put(db, "hello", "world")
       iex> DB.delete(db, "hello")
       :ok
@@ -270,8 +293,8 @@ defmodule Soy.DB do
       nil
 
   """
-  def delete(db, key) do
-    Native.db_delete(to_ref(db), key)
+  def delete(%DB{db_ref: db_ref}, key, opts \\ []) do
+    :rocksdb.single_delete(db_ref, key, opts)
   end
 
   @doc """
@@ -281,38 +304,63 @@ defmodule Soy.DB do
 
   ## Examples
 
-    iex> db = Soy.open(tmp_dir())
+    iex> {:ok, db, [_]} = Soy.open(tmp_dir())
     iex> {:ok, cf} = DBCol.create_new(db, "ages")
-    iex> ops = [{:put, "name", "bill"}, {:put_cf, Soy.DBCol.to_ref(cf), "bill", "28"}]
-    iex> 2 = Soy.batch(db, ops)
+    iex> ops = [{:put, "name", "bill"}, {:put, Soy.DBCol.to_ref(cf), "bill", "28"}]
+    iex> :ok = Soy.batch(db, ops)
     iex> Soy.get(db, "name")
     "bill"
-    iex> DBCol.get(cf, "bill")
+    iex> Soy.get(cf, "bill")
     "28"
 
   """
-  def batch(db, ops) when is_list(ops) do
-    Native.db_batch(to_ref(db), ops)
+  def write_batch(db, batch, opts \\ [])
+
+  def write_batch(%DB{db_ref: db_ref}, %Batch{ref: batch_ref}, opts) do
+    :rocksdb.write_batch(db_ref, batch_ref, opts)
+  end
+
+  def write_batch(%DB{} = db, ops, opts) when is_list(ops) do
+    b = Batch.from_list(ops)
+    write_batch(db, b, opts)
   end
 
   @doc """
-  Gets multiple keys from the db.
+  Flushes/Synces the db to disk.
   """
-  def multi_get(db, keys) do
-    Native.db_multi_get(to_ref(db), keys)
+  def flush(%DB{db_ref: db_ref}, opts \\ []) do
+    :rocksdb.flush(db_ref, opts)
   end
+
+  # @doc """
+  # Gets multiple keys from the db.
+  # """
+  # def multi_get(db, keys) do
+  #   Native.db_multi_get(to_ref(db), keys)
+  # end
 
   @doc """
   Creates a immutable snapshot of the DB in memory.
   """
-  def snapshot(db) do
-    Snapshot.new(to_ref(db))
+  def snapshot(%DB{db_ref: db_ref}) do
+    Snapshot.new(db_ref)
   end
 
   @doc """
   Creates an iter for the `db`.
   """
-  def iter(db) do
-    Iter.new(db)
+  def iter(%DB{db_ref: db_ref}) do
+    {:ok, it_ref} = :rocksdb.iterator(db_ref, [])
+    Iter.new(it_ref)
   end
+
+  def reduce_keys(%DB{db_ref: db_ref}, acc, opts \\ [], func) when is_function(func, 2) do
+    :rocksdb.fold_keys(db_ref, func, acc, opts)
+  end
+
+  def reduce(%DB{db_ref: db_ref}, acc, opts \\ [], func) when is_function(func, 2) do
+    :rocksdb.fold(db_ref, func, acc, opts)
+  end
+
+  def db_ref(%DB{db_ref: db_ref}), do: db_ref
 end
